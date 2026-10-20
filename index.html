@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="description" content="夜刃求生 · 一款纯前端 Canvas 实现的肉鸽割草生存小游戏，30+ 可叠加武器与被动，无依赖开箱即玩。" />
+<meta name="theme-color" content="#0d0b16" />
+<title>夜刃求生 · Roguelike Survivors</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game" width="1280" height="720"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="bar-wrap">
+          <div class="bar hp"><div id="hpFill" class="fill"></div><span id="hpText" class="bar-label">100 / 100</span></div>
+          <div class="bar xp"><div id="xpFill" class="fill"></div><span id="xpText" class="bar-label">Lv.1</span></div>
+        </div>
+        <div class="hud-stats">
+          <div class="stat"><b id="timeText">00:00</b><i>存活</i></div>
+          <div class="stat"><b id="killText">0</b><i>击杀</i></div>
+          <div class="stat"><b id="goldText">0</b><i>金币</i></div>
+        </div>
+      </div>
+      <div id="loadout" class="loadout"></div>
+      <div id="warning" class="warning hidden">⚠️ 强大敌人正在逼近……</div>
+    </div>
+
+    <!-- 升级三选一 -->
+    <div id="levelup" class="overlay hidden">
+      <div class="overlay-inner">
+        <div class="levelup-head">
+          <h2>⬆️ 升级！<span id="levelupSub">选择一项强化</span></h2>
+          <div class="head-btns">
+            <button id="btnReroll" class="btn ghost" title="重掷卡池">🎲 重掷 <span id="rerollLeft">3</span></button>
+            <button id="btnSkip" class="btn ghost" title="跳过并获得金币">跳过 +10💰</button>
+          </div>
+        </div>
+        <div id="cards" class="cards"></div>
+        <p class="tip">提示：重复选择同一项可提升其等级，最高 5 级；被动永久生效。</p>
+      </div>
+    </div>
+
+    <!-- 主菜单 -->
+    <div id="menu" class="overlay">
+      <div class="overlay-inner narrow">
+        <h1 class="logo">夜刃求生</h1>
+        <p class="tagline">ROGUELIKE · SURVIVORS · 割草一小时，尸山叠万丈</p>
+        <div class="menu-rows">
+          <label class="row">
+            <span>角色</span>
+            <select id="selChar"></select>
+          </label>
+          <label class="row">
+            <span>难度</span>
+            <select id="selDiff"></select>
+          </label>
+        </div>
+        <div id="charInfo" class="char-info"></div>
+        <button id="btnStart" class="btn primary big">▶ 开始游戏</button>
+        <div class="menu-foot">
+          <span class="keys">
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 方向键移动 ·
+            <kbd>P</kbd> 暂停 · <kbd>Esc</kbd> 菜单 · <kbd>M</kbd> 静音 · 触屏：拖动屏幕
+          </span>
+          <span class="ver">v1.0.0 · <a href="https://github.com/xyl554067-gif/roguelike-survivors" target="_blank" rel="noopener">源码</a></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 结算 -->
+    <div id="gameover" class="overlay hidden">
+      <div class="overlay-inner narrow">
+        <h2 id="goTitle" class="logo small">💀 你被淹没了</h2>
+        <div id="goStats" class="go-stats"></div>
+        <div class="go-btns">
+          <button id="btnRetry" class="btn primary">↻ 再来一局</button>
+          <button id="btnMenu" class="btn ghost">主菜单</button>
+        </div>
+        <p id="goTip" class="tip"></p>
+      </div>
+    </div>
+
+    <div id="paused" class="paused hidden">⏸ 已暂停</div>
+    <div id="toast" class="toast"></div>
+    <button id="btnMute" class="corner-btn" title="静音 (M)">🔊</button>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
