@@ -42,7 +42,8 @@ const base = 'https://xyl554067-gif.github.io/roguelike-survivors/';
     ['引擎·摇杆输入', eng.includes('setStick')],
     ['UI·商店缓存 runshop', /'runshop'/.test(ui) || /"runshop"/.test(ui)],
     ['UI·触屏控件开关', ui.includes('applyTouchPad')],
-    ['存档·金币购买角色', save.includes('buyChar')],
+    ['存档·金币扣除接口', save.includes('spendGold')],
+    ['UI·金币购买角色', ui.includes('buyChar') && ui.includes('purchasedChars')],
   ];
   let fail = 0;
   console.log('');
