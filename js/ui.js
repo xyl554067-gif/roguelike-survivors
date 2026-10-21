@@ -28,7 +28,7 @@
         'bossBar', 'bossName', 'bossFill', 'levelupSub', 'rerollLeft',
         'goTitle', 'goStats', 'goTip', 'goBreakdown', 'goRewards',
         'pauseBreakdown', 'achPopName', 'btnMute', 'selChar', 'selDiff', 'nextEvent',
-        'selMode', 'unlockBox', 'rsGold', 'rsList', 'goalList',
+        'selMode', 'unlockBox', 'rsGold', 'rsList', 'runshop', 'goalList',
         'touchPad', 'joyZone', 'joyBase', 'joyKnob', 'rotateHint',
       ];
       ids.forEach((id) => { this.el[id] = document.getElementById(id); });

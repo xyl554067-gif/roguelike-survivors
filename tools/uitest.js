@@ -40,13 +40,9 @@ class El{
 const registry=new Map();
 const mkEl=(id,tag)=>{if(id&&registry.has(id))return registry.get(id);const e=new El(id,tag);if(id)registry.set(id,e);return e;};
 
-// 预置 index.html 中的 id
-const IDS=['game','hud','levelup','menu','gameover','pause','settings','toast','achPop','cards','loadout','cart',
-'charInfo','bestList','shopList','shopGold','achList','achProgress','bestGrid','menuSettings','modalSettings',
-'hpFill','hpText','xpFill','xpText','dashFill','dashText','timeText','killText','goldText','warning','comboTag',
-'bossBar','bossName','bossFill','levelupSub','rerollLeft','goTitle','goStats','goTip','goBreakdown','goRewards',
-'pauseBreakdown','achPopName','btnMute','selChar','selDiff','btnStart','btnRetry','btnMenu','btnSkip','btnReroll',
-'btnBanish','btnResume','btnRestart','btnQuit','btnPauseSet','btnCloseSet','btnWipe','repoLink'];
+// id 列表直接从 index.html 解析，避免手写清单与页面脱节（曾因漏登 runshop 导致商店打不开）
+const htmlForIds=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
+const IDS=[...new Set([...htmlForIds.matchAll(/id="([^"]+)"/g)].map(m=>m[1]))];
 IDS.forEach(id=>mkEl(id));
 mkEl('game','canvas');
 ['hpFill','xpFill','dashFill','bossFill'].forEach(id=>mkEl(id).style.transform='');
@@ -192,6 +188,31 @@ const html=fs.readFileSync(path.join(ROOT,'index.html'),'utf8');
 ok(`index.html 引用了 ${(html.match(/<script src=/g)||[]).length} 个脚本`);
 ok(`index.html 包含 canvas：${html.includes('<canvas id="game"')}`);
 ok(`index.html 包含全部 5 个模块：${['data.js','save.js','engine.js','ui.js','main.js'].every(m=>html.includes(m))}`);
+
+/* ---------- overlay 显隐必须真实生效（回归：runshop 曾漏登导致商店打不开） ---------- */
+const OVERLAYS=['menu','hud','levelup','gameover','pause','settings','runshop','rotateHint','touchPad'];
+try{
+  UI.startGame();   // openRunShop 需要 player 存在
+  const missing=OVERLAYS.filter(id=>!UI.el[id]);
+  ok(`UI 元素缓存覆盖全部 ${OVERLAYS.length} 个 overlay`, !missing.length, missing.length?('缺失: '+missing.join(',')):'');
+  let toggleOk=true,detail='';
+  for(const id of OVERLAYS){
+    if(!UI.el[id])continue;
+    UI.hide(id);
+    if(!UI.el[id].classList.contains('hidden')){toggleOk=false;detail+=` ${id}:hide 失效`;}
+    UI.show(id);
+    if(UI.el[id].classList.contains('hidden')){toggleOk=false;detail+=` ${id}:show 失效`;}
+  }
+  ok('show()/hide() 对每个 overlay 都真实生效', toggleOk, detail.trim());
+  // 局内商店全链路：打开 → 渲染 → 关闭
+  UI.openRunShop();
+  const shopOpen=!UI.el.runshop.classList.contains('hidden') && UI.el.rsList.innerHTML.includes('data-buy');
+  UI.closeRunShop();
+  const shopClosed=UI.el.runshop.classList.contains('hidden');
+  ok('局内商店：打开渲染商品 + 关闭隐藏', shopOpen && shopClosed,
+     `打开=${shopOpen} 关闭=${shopClosed} 商品=${UI.el.rsList.innerHTML.split('data-buy').length-1}`);
+  UI.toMenu();      // 复位到菜单
+}catch(e){bad('overlay 显隐测试异常',e);}
 
 console.log('\n'+'─'.repeat(50));
 if(failures===0){console.log('\x1b[32m\x1b[1m  UI 流程全部通过 ✅\x1b[0m\n');process.exit(0);}
