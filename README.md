@@ -12,7 +12,7 @@
 ![GitHub Pages](https://img.shields.io/badge/demo-GitHub%20Pages-ffd166)
 ![No Dependencies](https://img.shields.io/badge/dependencies-0-06d6a0)
 ![License](https://img.shields.io/badge/license-MIT-7ee8fa)
-![Version](https://img.shields.io/badge/version-2.1.0-ef476f)
+![Version](https://img.shields.io/badge/version-2.1.1-ef476f)
 
 ---
 
@@ -97,11 +97,14 @@ npx serve .
 npm test
 ```
 
-包含三套无头测试：
+包含四套无头测试：
 
 - **`tools/htmlcheck.js`** —— HTML 结构校验：全部元素 ID、页签/面板配对、无残留旧引用
 - **`tools/selftest.js`** —— 数据完整性（26 武器 / 18 被动 / 17 敌人 / 5 首领 / 20 成就 / 11 商店项 / 12 修正器 / 10 条进化配方合法性）、存档读写、商店加成、9 角色模拟对局、长局压力、进化流程、成就解锁、种子随机可复现、挑战修正器生效、手柄输入
 - **`tools/uitest.js`** —— DOM 桩驱动完整 UI 流程：6 页签切换、每日/随机挑战、挑战开局与成绩入库、商店渲染、开局、升级选卡、暂停、结算、返回菜单
+- **`tools/leveluptest.js`** —— 升级卡片专项回归：可见性、连续多帧不闪变、DOM 不重复重建、可点击生效、连续升级、跳过/重掷/键盘选卡
+
+> 另有 `tools/_verify_bug.js` 用于验证测试自身有效性：它会逐个还原历史 bug，确认断言确实能捕获，防止「测试全绿但 bug 还在」。
 
 ## 📅 每日挑战
 
@@ -167,6 +170,14 @@ roguelike-survivors/
 - 暂不支持手柄与外接键盘自定义映射
 
 ## 📝 更新日志
+
+### v2.1.1
+- **修复：升级时卡片不可见且不可选**（两个叠加的根因）
+  - `openLevelUp()` 未切换 `game.state` → 游戏循环每帧重掷卡牌，卡片闪变、点击被新一帧覆盖
+  - `renderCards()` 每次都重建 DOM → 重启 CSS 入场动画，卡片反复回到 `opacity: 0` 而「不可见」
+- 修复：卡片内容未变时不再重建 DOM；CSS 入场动画改用 `fill-mode: both` 并显式声明 `opacity: 1`
+- 新增 `tools/leveluptest.js`：升级卡片专项回归测试（25 项断言）
+- 新增 `tools/_verify_bug.js`：自动验证测试有效性（逐个还原 bug，确认断言能捕获）
 
 ### v2.1.0
 - 新增：**每日挑战**（日期种子，全球同词条）+ **随机挑战**（12 种修正器任选 3）

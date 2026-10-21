@@ -37,7 +37,7 @@
 
     // 暴露给控制台调试
     window.__DSH_GAME__ = Game;
-    console.log('%c夜刃求生 v2.1.0', 'color:#ffd166;font-weight:bold', '—— 纯原生 Canvas 肉鸽割草');
+    console.log('%c夜刃求生 v2.1.1', 'color:#ffd166;font-weight:bold', '—— 纯原生 Canvas 肉鸽割草');
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

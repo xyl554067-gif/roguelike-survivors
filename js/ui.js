@@ -82,7 +82,12 @@
 
     bindLevelUp() {
       document.getElementById('btnReroll').onclick = () => {
-        if (global.DSGame.rerollCards()) { this.renderCards(); Save.touch(); }
+        if (global.DSGame.rerollCards()) {
+          this.pendingCards = global.DSGame.pendingCards;
+          this._cardsHtml = null;   // 强制重建，让新卡牌有入场动画
+          this.renderCards();
+          Save.touch();
+        }
       };
       document.getElementById('btnSkip').onclick = () => {
         global.DSGame.skipCard();
@@ -599,10 +604,14 @@
 
     /* ---------- 升级卡 ---------- */
     openLevelUp(g) {
+      // 幂等：已在升级界面则不重复掷卡，否则会每帧重掷导致卡牌闪变、无法点击
+      if (g.state === 'levelup' && this.el.levelup && !this.el.levelup.classList.contains('hidden')) return;
+      g.state = 'levelup';
       this.show('levelup');
       g.rollCards();
       this.pendingCards = g.pendingCards;
       this.banishMode = false;
+      this._cardsHtml = null;      // 强制重建 DOM
       this.renderCards();
     },
 
@@ -611,7 +620,7 @@
       const cards = this.pendingCards || g.pendingCards || [];
       this.el.rerollLeft.textContent = g.rerolls;
       document.getElementById('btnReroll').style.opacity = g.rerolls > 0 ? 1 : 0.35;
-      this.el.cards.innerHTML = cards.map((c, i) => {
+      const html = cards.map((c, i) => {
         const v = this.cardView(c);
         const pips = v.max > 1
           ? `<div class="lvbar">${Array.from({ length: v.max }, (_, k) =>
@@ -627,6 +636,11 @@
           <div class="key">按 <kbd>${i + 1}</kbd>${this.padCursor === i ? ' · 🎮 A 确认' : ''}</div>
         </div>`;
       }).join('');
+      // 关键：内容未变就不重写 DOM —— 重写会重启 CSS 入场动画，
+      // 导致卡片反复回到 opacity:0 变成「不可见且点不中」
+      if (this._cardsHtml === html) return;
+      this._cardsHtml = html;
+      this.el.cards.innerHTML = html;
       this.el.cards.querySelectorAll('.card').forEach((el) => {
         el.onclick = () => this.pickCard(+el.dataset.idx);
       });
@@ -665,8 +679,9 @@
       if (this.banishMode) {
         g.banishCard(card);
         this.pendingCards.splice(idx, 1);
-        if (!this.pendingCards.length) g.rollCards(), this.pendingCards = g.pendingCards;
+        if (!this.pendingCards.length) { g.rollCards(); this.pendingCards = g.pendingCards; }
         this.banishMode = false;
+        this._cardsHtml = null;    // 强制重建
         this.toast('🚫 已放逐，本局不再出现');
         this.renderCards();
         return;
@@ -681,11 +696,14 @@
       if (g.player.pendingLevels > 0) {
         g.rollCards();
         this.pendingCards = g.pendingCards;
+        this._cardsHtml = null;    // 强制重建
         this.renderCards();
-        if (g.state !== 'levelup') { g.state = 'levelup'; this.show('levelup'); }
+        g.state = 'levelup';
+        this.show('levelup');
         return;
       }
       this.hide('levelup');
+      this._cardsHtml = null;      // 下次升级时重新构建
       g.state = 'playing';
       g.last = performance.now();
     },
@@ -785,7 +803,11 @@
     onPadReroll() {
       const g = global.DSGame;
       if (g.state !== 'levelup') return;
-      if (g.rerollCards()) { this.pendingCards = g.pendingCards; this.renderCards(); }
+      if (g.rerollCards()) {
+        this.pendingCards = g.pendingCards;
+        this._cardsHtml = null;
+        this.renderCards();
+      }
     },
     onPadNav(dir) {
       const g = global.DSGame;

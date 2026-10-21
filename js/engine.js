@@ -462,6 +462,7 @@
       this.updateEffects(dt);
       this.updateCamera(dt);
       this.updateStreak(dt);
+      // 升级：仅在 playing 态触发一次，openLevelUp 内部会切到 levelup 态
       if (this.player.pendingLevels > 0 && this.state === 'playing') this.ui.openLevelUp(this);
       if (this.finalSpawned && !this.enemies.some((e) => e.final) && !this.won) this.endRun(true);
     },
