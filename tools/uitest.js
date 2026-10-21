@@ -1,4 +1,4 @@
-﻿// 用轻量 DOM 桩完整跑一遍 UI 流程（不需要真浏览器）
+// 用轻量 DOM 桩完整跑一遍 UI 流程（不需要真浏览器）
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const ROOT=process.cwd();
 let failures=0;
@@ -50,12 +50,15 @@ const IDS=['game','hud','levelup','menu','gameover','pause','settings','toast','
 IDS.forEach(id=>mkEl(id));
 mkEl('game','canvas');
 ['hpFill','xpFill','dashFill','bossFill'].forEach(id=>mkEl(id).style.transform='');
+// 挑战页签元素
+['dailyDate','streakText','dailyCard','randomMods','challengeHistory'].forEach(id=>mkEl(id));
+['btnRandomChallenge','btnStartChallenge'].forEach(id=>mkEl(id));
 // select options 需要 innerHTML 解析：手动塞
 mkEl('selChar').innerHTML='';
 mkEl('selDiff').innerHTML='';
 
-const tabs=['play','shop','ach','best','set'].map(t=>{const e=new El(null,'button');e.dataset.tab=t;e.classList.add('tab');return e;});
-const panels=['play','shop','ach','best','set'].map(p=>{const e=new El(null,'div');e.dataset.panel=p;e.classList.add('panel');return e;});
+const tabs=['play','daily','shop','ach','best','set'].map(t=>{const e=new El(null,'button');e.dataset.tab=t;e.classList.add('tab');return e;});
+const panels=['play','daily','shop','ach','best','set'].map(p=>{const e=new El(null,'div');e.dataset.panel=p;e.classList.add('panel');return e;});
 const chips=['weapons','passives','enemies','bosses'].map(c=>{const e=new El(null,'button');e.dataset.filter=c;e.classList.add('chip');return e;});
 
 const doc={
@@ -110,9 +113,29 @@ ok(`难度下拉已填充 ${UI.el.selDiff.innerHTML.includes('标准')?'是':'�
 
 // 页签切换
 try{
-  for(const t of ['shop','ach','best','set','play']) UI.switchTab(t);
-  ok('5 个页签切换无异常');
+  for(const t of ['daily','shop','ach','best','set','play']) UI.switchTab(t);
+  ok('6 个页签切换无异常');
 }catch(e){bad('页签切换失败',e);}
+
+// 挑战页签
+try{
+  UI.switchTab('daily');
+  ok(`每日挑战渲染：种子=${UI.dailyChallenge&&UI.dailyChallenge.seed}, 修正器=${UI.dailyChallenge&&UI.dailyChallenge.mods.length}`);
+  ok(`随机挑战已生成 ${UI.randomChallenge&&UI.randomChallenge.mods.length} 个修正器`);
+  ok(`挑战卡片已渲染 ${mkEl('dailyCard').innerHTML.includes('mod-card')?'是':'否'}`);
+}catch(e){bad('挑战页签失败',e);}
+
+// 挑战开局
+try{
+  const before=Save.data.challenges?Object.keys(Save.data.challenges).length:0;
+  UI.startChallenge();
+  ok(`挑战开局 state=${G.state} 修正器=${G.challenge?G.challenge.mods.length:0} 种子=${G._useSeed}`);
+  // 结束并记录
+  G.endRun(false);
+  const after=Save.data.challenges?Object.keys(Save.data.challenges).length:0;
+  ok(`挑战成绩已入库（${before} → ${after}）`);
+  UI.toMenu();
+}catch(e){bad('挑战开局失败',e);}
 
 // 商店渲染
 try{

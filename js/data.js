@@ -360,7 +360,7 @@
       },
       fire(g, p, s) {
         for (let i = 0; i < s.bombs; i++) {
-          const t = Math.random() < 0.75 ? g.nearestEnemy(p, 620) : null;
+          const t = g.random() < 0.75 ? g.nearestEnemy(p, 620) : null;
           const x = t ? t.x : p.x + g.rand(-300, 300);
           const y = t ? t.y : p.y + g.rand(-240, 240);
           g.spawnDelayed(x, y, 0.55, s.dmg * p.stat.might, s.radius * p.stat.area, 'cannon', s.stun);
@@ -825,9 +825,38 @@
       apply: (s) => { s.bonusRerolls += 1; } },
   ];
 
+  /* ============================ 挑战规则 ============================ */
+  /* 每日/随机挑战使用的修正器；positive 表示对玩家有利 */
+  const MODIFIERS = [
+    { id: 'swarm_tide', name: '虫潮', ico: '🐛', desc: '敌人数量 +50%，但经验 +20%', good: false,
+      apply: (m) => { m.spawnMul *= 1.5; m.xpMul *= 1.2; } },
+    { id: 'glass', name: '玻璃大炮', ico: '💥', desc: '伤害 +60%，受到伤害 +50%', good: false,
+      apply: (m) => { m.mightMul *= 1.6; m.dmgTakenMul *= 1.5; } },
+    { id: 'ironman', name: '铁人', ico: '🛡️', desc: '生命 +50%，但移速 -15%', good: true,
+      apply: (m) => { m.hpMul *= 1.5; m.speedMul *= 0.85; } },
+    { id: 'frenzy', name: '狂暴', ico: '🔥', desc: '攻速 +35%，敌人也更快', good: true,
+      apply: (m) => { m.cdMul *= 0.65; m.enemySpeedMul *= 1.18; } },
+    { id: 'bounty', name: '赏金', ico: '💰', desc: '金币 +100%，敌人血量 +30%', good: true,
+      apply: (m) => { m.goldMul *= 2; m.enemyHpMul *= 1.3; } },
+    { id: 'darkness', name: '黑雾', ico: '🌫️', desc: '视野缩小，但掉落率 +80%', good: false,
+      apply: (m) => { m.visionMul *= 0.78; m.luckBonus += 0.8; } },
+    { id: 'haste', name: '疾风', ico: '💨', desc: '移速 +25%，冲刺冷却 -50%', good: true,
+      apply: (m) => { m.speedMul *= 1.25; m.dashCdMul *= 0.5; } },
+    { id: 'famine', name: '荒芜', ico: '🍂', desc: '治疗与回复 -60%，经验 +40%', good: false,
+      apply: (m) => { m.healMul *= 0.4; m.xpMul *= 1.4; } },
+    { id: 'elite_rush', name: '精英潮', ico: '👑', desc: '精英出现更早更多，金币 +50%', good: false,
+      apply: (m) => { m.eliteMul *= 2.2; m.goldMul *= 1.5; } },
+    { id: 'last_stand', name: '背水一战', ico: '⚔️', desc: '无法复活，但全属性 +20%', good: true,
+      apply: (m) => { m.noRevive = true; m.mightMul *= 1.2; m.hpMul *= 1.2; } },
+    { id: 'slow_world', name: '迟滞', ico: '🐌', desc: '敌人移速 -25%，你的攻速 -15%', good: true,
+      apply: (m) => { m.enemySpeedMul *= 0.75; m.cdMul *= 1.15; } },
+    { id: 'treasure', name: '寻宝', ico: '🎁', desc: '宝箱翻倍，敌人血量 +25%', good: true,
+      apply: (m) => { m.chestMul *= 2; m.enemyHpMul *= 1.25; } },
+  ];
+
   global.DSData = {
     TAU, CHARACTERS, DIFFICULTIES, WEAPONS, EVOLUTIONS, PASSIVES,
-    ENEMY_TYPES, BOSS_TYPES, ITEMS, ACHIEVEMENTS, SHOP,
+    ENEMY_TYPES, BOSS_TYPES, ITEMS, ACHIEVEMENTS, SHOP, MODIFIERS,
     RUN_DURATION: 30 * 60,
     MAX_ENEMIES: 380,
     MAX_PROJECTILES: 700,

@@ -76,6 +76,7 @@
   /* ============================ 输入 ============================ */
   const Input = {
     keys: new Set(), dashQueued: false,
+    pad: { connected: false, id: '', axes: [0, 0], prevButtons: [] },
     touch: { active: false, ox: 0, oy: 0, dx: 0, dy: 0, id: null },
     init(canvas, hooks) {
       this.hooks = hooks || {};
@@ -89,6 +90,17 @@
       });
       addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
       addEventListener('blur', () => { this.keys.clear(); if (hooks && hooks.onBlur) hooks.onBlur(); });
+
+      // 手柄
+      addEventListener('gamepadconnected', (e) => {
+        this.pad.connected = true;
+        this.pad.id = e.gamepad && e.gamepad.id || '';
+        if (hooks && hooks.onToast) hooks.onToast('🎮 手柄已连接：' + this.pad.id.slice(0, 40));
+      });
+      addEventListener('gamepaddisconnected', () => {
+        this.pad.connected = false;
+        if (hooks && hooks.onToast) hooks.onToast('🎮 手柄已断开');
+      });
 
       const start = (e) => {
         const t = e.touches ? e.touches[0] : e;
@@ -114,12 +126,55 @@
       addEventListener('mousemove', move);
       addEventListener('mouseup', end);
     },
+
+    /** 每帧轮询手柄（Gamepad API 是轮询式） */
+    pollGamepad(hooks) {
+      if (!navigator.getGamepads) return;
+      let pads;
+      try { pads = navigator.getGamepads(); } catch (e) { return; }
+      let gp = null;
+      for (const p of pads) if (p && p.connected) { gp = p; break; }
+      if (!gp) { this.pad.connected = false; return; }
+      this.pad.connected = true;
+      const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+      const dead = 0.22;
+      this.pad.axes = [Math.abs(ax) > dead ? ax : 0, Math.abs(ay) > dead ? ay : 0];
+      // 按钮：0=A 冲刺, 9=Start 暂停, 8=Back 菜单, 12-15 十字键
+      const btn = (i) => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.5));
+      const prev = this.pad.prevButtons;
+      const edge = (i) => btn(i) && !prev[i];
+      if (hooks) {
+        if (edge(0) && hooks.onDash) hooks.onDash();
+        if (edge(9) && hooks.onPause) hooks.onPause();
+        if (edge(8) && hooks.onBack) hooks.onBack();
+        if (edge(3) && hooks.onSkip) hooks.onSkip();       // Y
+        if (edge(2) && hooks.onReroll) hooks.onReroll();   // X
+        if (edge(12)) hooks.onNav && hooks.onNav('up');
+        if (edge(13)) hooks.onNav && hooks.onNav('down');
+        if (edge(14)) hooks.onNav && hooks.onNav('left');
+        if (edge(15)) hooks.onNav && hooks.onNav('right');
+      }
+      const n = gp.buttons.length;
+      this.pad.prevButtons = Array.from({ length: n }, (_, i) => btn(i));
+    },
+
     vec() {
       let x = 0, y = 0;
       if (this.keys.has('a') || this.keys.has('arrowleft')) x -= 1;
       if (this.keys.has('d') || this.keys.has('arrowright')) x += 1;
       if (this.keys.has('w') || this.keys.has('arrowup')) y -= 1;
       if (this.keys.has('s') || this.keys.has('arrowdown')) y += 1;
+      // 手柄摇杆 / 十字键优先于键鼠（最后写入），并有死区
+      if (this.pad.connected) {
+        const ax = this.pad.axes[0], ay = this.pad.axes[1];
+        const pb = this.pad.prevButtons;
+        // 摇杆与十字键合成模拟「按键强度」，强度大的一方决定方向
+        let px = (pb[14] ? -1 : 0) + (pb[15] ? 1 : 0);
+        let py = (pb[12] ? -1 : 0) + (pb[13] ? 1 : 0);
+        if (Math.abs(ax) > Math.abs(px)) px = ax;
+        if (Math.abs(ay) > Math.abs(py)) py = ay;
+        if (px || py) { x = px; y = py; }
+      }
       if (this.touch.active && (this.touch.dx || this.touch.dy)) { x = this.touch.dx; y = this.touch.dy; }
       const m = Math.hypot(x, y);
       return m > 1 ? { x: x / m, y: y / m } : { x, y };
@@ -193,6 +248,12 @@
         onDash: () => this.tryDash(),
         onTouch: () => { AudioFX.init(); AudioFX.resume(); },
         onBlur: () => { if (this.state === 'playing' && this.settings.autoPause) this.pause(); },
+        onToast: (m) => this.toast(m),
+        onPause: () => this.togglePause(),
+        onBack: () => { if (this.state === 'playing') this.pause(); },
+        onSkip: () => { if (this.state === 'levelup') ui.onPadSkip && ui.onPadSkip(); },
+        onReroll: () => { if (this.state === 'levelup') ui.onPadReroll && ui.onPadReroll(); },
+        onNav: (dir) => { if (this.state === 'levelup') ui.onPadNav && ui.onPadNav(dir); },
       });
       requestAnimationFrame((t) => this.loop(t));
     },
@@ -211,9 +272,24 @@
       this.viewW = 1280; this.viewH = 720;
     },
 
-    rand(a, b) { return a + Math.random() * (b - a); },
+    /* ---------- 随机数：支持种子（每日挑战可复现） ---------- */
+    _seed: 0,
+    setSeed(seed) {
+      this._seed = (seed >>> 0) || (Date.now() >>> 0);
+      this._useSeed = true;
+    },
+    clearSeed() { this._useSeed = false; },
+    /** mulberry32：快速、够用、可复现 */
+    random() {
+      if (!this._useSeed) return Math.random();
+      let t = (this._seed += 0x6D2B79F5) >>> 0;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
+    rand(a, b) { return a + this.random() * (b - a); },
     randi(a, b) { return Math.floor(this.rand(a, b + 1)); },
-    pick(a) { return a[Math.floor(Math.random() * a.length)]; },
+    pick(a) { return a[Math.floor(this.random() * a.length)]; },
     dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; },
     sfx(n) { AudioFX.play(n); },
 
@@ -239,22 +315,48 @@
     },
 
     /* ---------- 开局 ---------- */
-    start(charId, diffId) {
+    start(charId, diffId, opts) {
+      opts = opts || {};
       const ch = D.CHARACTERS.find((c) => c.id === charId) || D.CHARACTERS[0];
       const diff = D.DIFFICULTIES.find((d) => d.id === diffId) || D.DIFFICULTIES[1];
       this.char = ch; this.diff = diff;
+
+      // 挑战修正器
+      this.challenge = opts.challenge || null;
+      this.mod = this.buildModifiers(this.challenge);
+
+      // 种子（每日挑战固定，其余随机）
+      if (opts.seed != null) this.setSeed(opts.seed); else this.clearSeed();
+
       this.settings = Object.assign(this.settings, this.ui.settings || {});
       this.resetWorld();
       this.player = this.makePlayer(ch);
       this.addWeapon(this.player, ch.weapon);
       this.recompute(this.player);
-      this.rerolls = 3 + (this.player.stat.bonusRerolls | 0);
+      this.rerolls = 3 + (this.player.stat.bonusRerolls | 0) + (this.mod.bonusRerolls | 0);
       this.pendingLevels = 0; this.banished = new Set();
       this.state = 'playing';
       this.last = performance.now();
       this.ui.onStart(this);
       AudioFX.init(); AudioFX.resume();
-      this.toast(`难度：${diff.name} · 活过 30 分钟并击败深渊领主`);
+      const tag = this.challenge ? ` · ${this.challenge.name}` : '';
+      this.toast(`难度：${diff.name}${tag} · 活过 30 分钟并击败深渊领主`);
+    },
+
+    /** 把挑战修正器汇总成运行时参数 */
+    buildModifiers(challenge) {
+      const m = {
+        spawnMul: 1, xpMul: 1, goldMul: 1, mightMul: 1, dmgTakenMul: 1,
+        hpMul: 1, speedMul: 1, cdMul: 1, enemySpeedMul: 1, enemyHpMul: 1,
+        healMul: 1, visionMul: 1, luckBonus: 0, eliteMul: 1, chestMul: 1,
+        dashCdMul: 1, noRevive: false, bonusRerolls: 0,
+      };
+      const mods = (challenge && challenge.mods) || [];
+      for (const id of mods) {
+        const def = D.MODIFIERS.find((x) => x.id === id);
+        if (def) def.apply(m);
+      }
+      return m;
     },
 
     makePlayer(ch) {
@@ -276,19 +378,22 @@
 
     recompute(p) {
       const s = p.stat, ch = p.char;
-      s.might = ch.might + s.shopMight;
-      s.speed = ch.spd + s.shopSpeed;
+      const m = this.mod || {};
+      s.might = (ch.might + s.shopMight) * (m.mightMul || 1);
+      s.speed = (ch.spd + s.shopSpeed) * (m.speedMul || 1);
       s.area = ch.area; s.duration = 1; s.proj = ch.proj;
-      s.magnet = ch.magnet; s.armor = ch.armor; s.regen = ch.regen; s.revive = ch.rev;
+      s.magnet = ch.magnet; s.armor = ch.armor; s.regen = ch.regen * (m.healMul || 1);
+      s.revive = m.noRevive ? 0 : ch.rev;
       s.cooldown = 0; s.projspeed = 0; s.crit = 0.05; s.critdmg = 0.6;
-      s.greed = s.shopGreed; s.xpGain = ch.xp + s.shopXp;
-      s.maxHpFlat = 0; s.pierce = 0; s.luck = 0; s.thorns = 0;
+      s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
+      s.maxHpFlat = 0; s.pierce = 0; s.luck = (m.luckBonus || 0); s.thorns = 0;
       for (const id in p.passives) {
         const def = D.PASSIVES[id];
         for (let i = 0; i < p.passives[id]; i++) def.each(s, p);
       }
-      s.cooldown = clamp(s.cooldown, 0, 0.72);
-      p.maxHp = ch.hp + s.maxHpFlat;
+      s.cooldown = clamp(s.cooldown * (m.cdMul || 1), 0, 0.82);
+      s.dashCdMul = (s.dashCdMul || 1) * (m.dashCdMul || 1);
+      p.maxHp = (ch.hp + s.maxHpFlat) * (m.hpMul || 1);
       p.hp = Math.min(p.hp, p.maxHp);
     },
 
@@ -332,6 +437,9 @@
       this.fpsAcc = (this.fpsAcc || 0) + dt;
       this.fpsFrames = (this.fpsFrames || 0) + 1;
       if (this.fpsAcc > 0.5) { this.fps = Math.round(this.fpsFrames / this.fpsAcc); this.fpsAcc = 0; this.fpsFrames = 0; }
+
+      // 手柄轮询（每帧）
+      Input.pollGamepad(Input.hooks);
 
       if (this.state === 'playing') this.step(dt);
       else if (this.state === 'menu') this.menuStep(dt);
@@ -427,8 +535,8 @@
       if (Math.abs(v.x) > 0.05) p.aimX = v.x > 0 ? 1 : -1;
       const mv = Math.hypot(p.vx, p.vy);
       if (mv > 14) { p.aimAng = Math.atan2(p.vy, p.vx); p.walk += dt * 9; }
-      // 静止或慢速时自动朝向最近敌人，保证远程武器不会朝空气开火
-      if (mv <= 14) {
+      // 静止或慢速时自动朝向最近敌人（可关闭），保证远程武器不会朝空气开火
+      if (mv <= 14 && this.settings.autoAim !== false) {
         const tgt = this.nearestEnemy(p, 420);
         if (tgt) p.aimAng = Math.atan2(tgt.y - p.y, tgt.x - p.x);
       }
@@ -471,19 +579,19 @@
       const m = this.t / 60;
       // 起手更温和：前 2 分钟压力明显降低，之后逐步加码
       const ramp = m < 2 ? 0.9 + m * 0.3 : 1.5 + (m - 2) * 0.62 + Math.max(0, m - 15) * 0.9;
-      const per = ramp * this.diff.spawn;
+      const per = ramp * this.diff.spawn * ((this.mod && this.mod.spawnMul) || 1);
       this.spawnFrac += per * dt;
       const list = this.availableTypes();
       if (!list.length) return;
       while (this.spawnFrac >= 1) {
         this.spawnFrac -= 1;
         if (this.enemies.length >= D.MAX_ENEMIES) break;
-        const roll = Math.random();
+        const roll = this.random();
         if (this.t > 300 && roll < 0.018) { this.spawnEnemy('mimic'); continue; }
         if (this.t > this.nextElite) { this.nextElite += this.rand(150, 230); this.spawnEnemy('elite'); continue; }
         const id = list[this.randi(0, list.length - 1)].id;
         this.spawnEnemy(id);
-        if (id === 'swarm' && Math.random() < 0.55) for (let i = 0; i < 4; i++) this.spawnEnemy('swarm');
+        if (id === 'swarm' && this.random() < 0.55) for (let i = 0; i < 4; i++) this.spawnEnemy('swarm');
       }
 
       const waveIdx = Math.floor(this.t / 90);
@@ -492,6 +600,12 @@
         this.spawnRing(waveIdx);
       }
       if (this.t >= this.nextMini) { this.nextMini += 90; this.spawnMiniBoss(); }
+      // 提前 8 秒预告小 Boss
+      if (this.t >= this.nextMini - 8 && !this._miniWarned) {
+        this._miniWarned = true;
+        this.toast('⚠️ 小 Boss 即将降临');
+      }
+      if (this.t < this.nextMini - 8) this._miniWarned = false;
       if (this.t >= D.RUN_DURATION && !this.finalSpawned) {
         this.finalSpawned = true;
         this.spawnBoss('lich', true);
@@ -508,14 +622,15 @@
       const e = {
         id, def, x: pos.x, y: pos.y, r: def.r * (scale || 1), kx: 0, ky: 0,
         hp: 0, maxHp: 0, flash: 0, dead: false, anim: this.rand(0, TAU),
-        spd: def.spd * diff.spd * (demo ? 1 : c.speed),
+        spd: def.spd * diff.spd * (demo ? 1 : c.speed) * ((this.mod && this.mod.enemySpeedMul) || 1),
         dmg: def.dmg, xp: def.xp, gold: def.gold,
         boss: false, elite: !!def.elite, armor: def.armor || 0,
         faded: 0, bossCd: 0,
         frozen: 0, stun: 0, slowed: 0, burn: null, shootCd: this.rand(1, 3),
         chargeState: 0, chargeT: 0, aim: null, demo: !!demo,
       };
-      e.maxHp = e.hp = Math.round(def.hp * (demo ? 1 : c.hp) * diff.hp * (scale || 1));
+      e.maxHp = e.hp = Math.round(def.hp * (demo ? 1 : c.hp) * diff.hp * (scale || 1)
+        * ((this.mod && this.mod.enemyHpMul) || 1));
       this.enemies.push(e);
       return e;
     },
@@ -525,7 +640,7 @@
       const R = 560;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * TAU;
-        this.spawnEnemy(Math.random() < 0.45 ? 'skeleton' : 'slime',
+        this.spawnEnemy(this.random() < 0.45 ? 'skeleton' : 'slime',
           { x: this.player.x + Math.cos(a) * R, y: this.player.y + Math.sin(a) * R });
       }
       this.toast('⭕ 敌潮包围！');
@@ -771,7 +886,7 @@
       let d = dmg;
       if (e.armor && !opt.trueDamage) d = Math.max(1, d - e.armor * 0.6);
       const cc = opt.critChance != null ? opt.critChance : p.stat.crit;
-      const crit = Math.random() < cc;
+      const crit = this.random() < cc;
       if (crit) d *= 1 + p.stat.critdmg + (opt.critDmgBonus || 0);
       d = Math.max(1, Math.round(d));
 
@@ -789,7 +904,7 @@
       }
       if (opt.burn) e.burn = { dps: opt.burn, t: opt.burnDur || 3, tick: 0 };
       if (opt.stun) e.stun = Math.max(e.stun || 0, opt.stun);
-      if (!opt.quiet && Math.random() < 0.3) this.sfx('hit');
+      if (!opt.quiet && this.random() < 0.3) this.sfx('hit');
 
       if (e.hp <= 0) this.killEnemy(p, e, src);
       return d;
@@ -808,7 +923,7 @@
         Math.round(e.gold * (1 + p.stat.greed) * this.diff.gold));
 
       // 道具掉落
-      if (!e.boss && Math.random() < 0.055 * (1 + luck)) this.dropItem(e.x, e.y);
+      if (!e.boss && this.random() < 0.055 * (1 + luck)) this.dropItem(e.x, e.y);
       if (e.def.boomOnDeath) {
         this.explode(e.x, e.y, e.def.boomOnDeath, e.dmg * 2, { src: 'boom', hostile: true });
       }
@@ -1136,10 +1251,14 @@
       this.fx.nova(c.x, c.y, 120, 'rgba(255,209,102,0.45)');
       this.sfx('chest');
       if (c.mini) { this.toast(`🎁 宝箱 +${gold}💰`); return; }
-      const roll = Math.random() * (1 + p.stat.luck);
+      const roll = this.random() * (1 + p.stat.luck);
       if (roll < 0.5) { p.pendingLevels++; this.pendingLevels = p.pendingLevels; this.toast('🎁 宝箱：立即升级！'); }
       else if (roll < 0.78) { for (const g of this.gems) g.magnet = true; this.toast('🧲 宝箱：全屏吸取！'); }
-      else if (roll < 0.92) { p.hp = Math.min(p.maxHp, p.hp + 45); this.toast('💖 宝箱：回复 45 生命'); }
+      else if (roll < 0.92) {
+        const heal = Math.round(45 * ((this.mod && this.mod.healMul) || 1));
+        p.hp = Math.min(p.maxHp, p.hp + heal);
+        this.toast(`💖 宝箱：回复 ${heal} 生命`);
+      }
       else { this.dropItem(c.x, c.y); this.toast('🎁 宝箱：掉落道具！'); }
     },
 
@@ -1147,8 +1266,9 @@
       const p = this.player;
       this.sfx('pickup');
       if (it.kind === 'heal') {
-        p.hp = Math.min(p.maxHp, p.hp + 30);
-        this.fx.text(p.x, p.y - 26, '+30', '#7dffb0', 16);
+        const heal = Math.round(30 * ((this.mod && this.mod.healMul) || 1));
+        p.hp = Math.min(p.maxHp, p.hp + heal);
+        this.fx.text(p.x, p.y - 26, '+' + heal, '#7dffb0', 16);
       } else if (it.kind === 'magnet') {
         for (const g of this.gems) g.magnet = true;
         this.toast('🧲 磁石：吸取全场经验');
@@ -1168,6 +1288,7 @@
       if (!p || p.dead || p.invul > 0 || this.state !== 'playing') return;
       const s = p.stat;
       let d = Math.max(1, Math.round(dmg - s.armor));
+      d = Math.max(1, Math.round(d * ((this.mod && this.mod.dmgTakenMul) || 1)));
       p.hp -= d;
       p.dmgTaken += d;
       // 受击后 0.55s 无敌：足以穿出怪群，又不至于无脑站桩
@@ -1282,7 +1403,7 @@
         let total = 0;
         for (const o of pool) if (!used.has(o.type + o.id)) total += o.w;
         if (total <= 0) break;
-        let r = Math.random() * total, chosen = null;
+        let r = this.random() * total, chosen = null;
         for (const o of pool) {
           if (used.has(o.type + o.id)) continue;
           r -= o.w;

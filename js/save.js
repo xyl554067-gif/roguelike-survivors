@@ -16,6 +16,7 @@
   const DEFAULT_SETTINGS = {
     sfx: true, shake: true, particles: true, damageNumbers: true,
     screenFlash: true, autoPause: true, showFps: false, minimap: true,
+    autoAim: true, bigText: false, lowFx: false,
   };
 
   function blank() {
@@ -24,6 +25,7 @@
       gold: 0,
       shop: {},
       achievements: {},
+      challenges: {},
       stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
       settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       best: {},
@@ -191,6 +193,70 @@
       }
       this.touch();
       return this.checkAchievements();
+    },
+
+    /* ---------- 每日挑战 ---------- */
+    /** 用日期字符串做种子，保证全球玩家同一天遇到同一套挑战 */
+    dailyInfo(dateStr) {
+      const d = dateStr || new Date().toISOString().slice(0, 10);
+      let h = 2166136261;
+      for (let i = 0; i < d.length; i++) {
+        h ^= d.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const seed = h >>> 0;
+      // 用同一套确定性随机挑选修正器
+      let s = seed;
+      const rnd = () => {
+        s = (s + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(s ^ (s >>> 15), s | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const all = global.DSData.MODIFIERS;
+      const pool = all.slice();
+      const mods = [];
+      for (let i = 0; i < 3 && pool.length; i++) {
+        mods.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0].id);
+      }
+      return { date: d, seed, mods, key: 'daily_' + d };
+    },
+
+    /** 随机挑战（每次不同） */
+    randomChallenge() {
+      const all = global.DSData.MODIFIERS.slice();
+      const mods = [];
+      for (let i = 0; i < 3 && all.length; i++) {
+        mods.push(all.splice(Math.floor(Math.random() * all.length), 1)[0].id);
+      }
+      return { date: null, seed: (Math.random() * 4294967296) >>> 0, mods, key: 'random' };
+    },
+
+    /** 记录挑战成绩 */
+    recordChallenge(challenge, run) {
+      if (!this.data.challenges) this.data.challenges = {};
+      const key = challenge.key;
+      const cur = this.data.challenges[key];
+      if (!cur || cur.time < run.time) {
+        this.data.challenges[key] = {
+          time: run.time, level: run.level, kills: run.kills,
+          char: run.char, won: !!run.won, mods: challenge.mods, at: Date.now(),
+        };
+      }
+      this.touch();
+    },
+
+    /** 连续游玩天数 */
+    touchStreak() {
+      const today = new Date().toISOString().slice(0, 10);
+      const s = this.data.streak || { days: 0, last: null };
+      if (s.last === today) return s.days;
+      const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      s.days = s.last === y ? (s.days || 0) + 1 : 1;
+      s.last = today;
+      this.data.streak = s;
+      this.touch();
+      return s.days;
     },
 
     /* ---------- 导入导出 ---------- */

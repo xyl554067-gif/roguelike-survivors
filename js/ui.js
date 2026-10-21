@@ -27,7 +27,7 @@
         'timeText', 'killText', 'goldText', 'warning', 'comboTag',
         'bossBar', 'bossName', 'bossFill', 'levelupSub', 'rerollLeft',
         'goTitle', 'goStats', 'goTip', 'goBreakdown', 'goRewards',
-        'pauseBreakdown', 'achPopName', 'btnMute', 'selChar', 'selDiff',
+        'pauseBreakdown', 'achPopName', 'btnMute', 'selChar', 'selDiff', 'nextEvent',
       ];
       ids.forEach((id) => { this.el[id] = document.getElementById(id); });
       this.settings = Object.assign({}, Save.data.settings);
@@ -62,6 +62,13 @@
       document.getElementById('btnStart').onclick = () => this.startGame();
       document.getElementById('btnWipe').onclick = () => this.wipeSave();
       this.el.btnMute.onclick = () => this.toggleMute();
+
+      // 挑战
+      document.getElementById('btnRandomChallenge').onclick = () => {
+        this.randomChallenge = Save.randomChallenge();
+        this.renderDaily();
+      };
+      document.getElementById('btnStartChallenge').onclick = () => this.startChallenge();
 
       document.querySelectorAll('#bestFilter .chip').forEach((c) => {
         c.onclick = () => {
@@ -129,10 +136,82 @@
     switchTab(name) {
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
       document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.dataset.panel === name));
+      if (name === 'daily') this.renderDaily();
       if (name === 'shop') this.renderShop();
       if (name === 'ach') this.renderAchievements();
       if (name === 'best') this.renderCodex();
       if (name === 'set') this.renderSettings();
+    },
+
+    /* ---------- 每日 / 随机挑战 ---------- */
+    renderDaily() {
+      const daily = Save.dailyInfo();
+      const streak = Save.touchStreak();
+      this.dailyChallenge = { ...daily, name: '每日挑战' };
+      if (!this.randomChallenge) this.randomChallenge = Save.randomChallenge();
+
+      const el = document.getElementById('dailyDate');
+      if (el) el.textContent = daily.date;
+      const st = document.getElementById('streakText');
+      if (st) st.textContent = streak > 1 ? `🔥 连续 ${streak} 天` : '';
+
+      const modsHtml = (mods) => mods.map((id) => {
+        const m = D.MODIFIERS.find((x) => x.id === id);
+        if (!m) return '';
+        return `<div class="mod-card ${m.good ? 'good' : 'bad'}">
+          <div class="mc-ico">${m.ico}</div>
+          <div class="mc-body"><div class="mc-name">${m.name}</div><div class="mc-desc">${m.desc}</div></div>
+        </div>`;
+      }).join('');
+
+      const card = document.getElementById('dailyCard');
+      if (card) {
+        const best = Save.data.challenges && Save.data.challenges[daily.key];
+        card.innerHTML = `
+          <div class="ch-head">
+            <span class="ch-title">今天的词条</span>
+            <span class="ch-seed">种子 ${daily.seed}</span>
+          </div>
+          <div class="mod-preview">${modsHtml(daily.mods)}</div>
+          <div class="ch-foot">
+            ${best ? `最佳：${this.fmt(best.time)} · Lv.${best.level} · ${best.kills} 杀${best.won ? ' · 🏆' : ''}`
+                   : '<span class="dim">还没有今天的成绩，来一发？</span>'}
+          </div>`;
+      }
+      const randRoot = document.getElementById('randomMods');
+      if (randRoot) randRoot.innerHTML = modsHtml(this.randomChallenge.mods);
+      this.renderChallengeHistory();
+    },
+
+    renderChallengeHistory() {
+      const root = document.getElementById('challengeHistory');
+      if (!root) return;
+      const all = Save.data.challenges || {};
+      const keys = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0)).slice(0, 8);
+      if (!keys.length) {
+        root.innerHTML = '<div class="dim" style="font-size:12px">暂无记录</div>';
+        return;
+      }
+      root.innerHTML = keys.map((k) => {
+        const r = all[k];
+        const label = k === 'random' ? '随机挑战' : k.replace('daily_', '');
+        return `<div class="ch-row">
+          <span class="ch-date">${label}</span>
+          <span class="ch-time">${this.fmt(r.time)}</span>
+          <span class="ch-lv">Lv.${r.level}</span>
+          <span class="ch-kills">${r.kills} 杀</span>
+          ${r.won ? '<span class="ch-win">🏆</span>' : ''}
+        </div>`;
+      }).join('');
+    },
+
+    startChallenge() {
+      const c = D.CHARACTERS.find((x) => x.id === this.selectedChar);
+      if (!c || !Save.isCharUnlocked(c)) { this.toast('🔒 该角色尚未解锁'); return; }
+      const ch = this.dailyChallenge || { ...Save.dailyInfo(), name: '每日挑战' };
+      this.activeChallenge = ch;
+      this.hide('menu'); this.hide('gameover'); this.hide('pause'); this.hide('settings');
+      global.DSGame.start(this.selectedChar, this.selectedDiff, { challenge: ch, seed: ch.seed });
     },
 
     /* ---------- 构建选择器 ---------- */
@@ -179,7 +258,25 @@
         </div>
         <div class="ci-weapon">初始武器：<b>${w.ico} ${w.name}</b></div>
         <div class="ci-diff">难度：<b>${diff.name}</b> · ${diff.tag}</div>
-        ${best ? `<div class="ci-best">个人最佳：${this.fmt(best.time)} · Lv.${best.level} · ${best.kills} 杀${best.won ? ' · 🏆 通关' : ''}</div>` : ''}`;
+        ${best ? `<div class="ci-best">个人最佳：${this.fmt(best.time)} · Lv.${best.level} · ${best.kills} 杀${best.won ? ' · 🏆 通关' : ''}</div>` : ''}
+        ${this.tipsFor(c.id)}`;
+    },
+
+    /** 角色专属小提示，帮助新手理解玩法 */
+    tipsFor(charId) {
+      const tips = {
+        blade: '保持面向敌人挥鞭；被围住时按空格穿出去。',
+        gunner: '飞刀朝移动方向连发，边撤边打最舒服。',
+        witch: '火球自动锁敌，站在怪群边缘持续轰炸。',
+        monk: '罡气是近身武器，主动贴上去，靠护甲硬扛。',
+        ranger: '飞斧有抛物线，往怪多的方向砸，别对单体。',
+        necro: '灵弹自动索敌，专心走位即可，自带一次复活。',
+        warden: '圣典绕身转，站在怪堆中心收益最大。',
+        alchemist: '毒瓶落地成池，把怪引到池子里打。',
+        blademaster: '光矛直线贯穿，调整站位一次打一排。',
+      };
+      const t = tips[charId];
+      return t ? `<div class="ci-tip">💡 ${t}</div>` : '';
     },
 
     renderBestList() {
@@ -298,6 +395,9 @@
         { k: 'screenFlash', t: '受击闪屏', d: '受伤时屏幕泛红' },
         { k: 'autoPause', t: '失焦自动暂停', d: '切换到其它窗口时暂停' },
         { k: 'minimap', t: '小地图', d: '右下角显示敌人分布' },
+        { k: 'autoAim', t: '自动瞄准', d: '静止时自动朝向最近敌人（建议开启）' },
+        { k: 'bigText', t: '大字号', d: '放大 HUD 与菜单文字，便于阅读' },
+        { k: 'lowFx', t: '低特效模式', d: '一键关闭粒子/伤害数字/屏幕震动' },
         { k: 'showFps', t: '显示 FPS', d: '调试用，显示帧率与实体数' },
       ];
       const html = rows.map((r) => `
@@ -320,6 +420,20 @@
             Save.data.settings[cb.dataset.set] = cb.checked;
             Save.touch();
             if (cb.dataset.set === 'sfx') global.DSAudio.on = cb.checked;
+            if (cb.dataset.set === 'bigText') {
+              document.body.classList.toggle('big-text', cb.checked);
+            }
+            if (cb.dataset.set === 'lowFx') {
+              // 低特效：联动关闭粒子/伤害数字/震动/闪屏
+              const chain = { particles: false, damageNumbers: false, shake: false, screenFlash: false };
+              Object.assign(this.settings, chain);
+              Object.assign(Save.data.settings, chain);
+              // 同步所有复选框
+              root.querySelectorAll('[data-set]').forEach((x) => {
+                if (chain[x.dataset.set] === false) x.checked = false;
+              });
+              this.toast('🌑 低特效模式已开启');
+            }
             if (global.DSGame) Object.assign(global.DSGame.settings, this.settings);
           };
         });
@@ -377,6 +491,12 @@
       const p = g.player;
       this.show('gameover');
       this.hide('hud');
+
+      // 挑战成绩入库
+      if (g.challenge) {
+        try { Save.recordChallenge(g.challenge, run); } catch (e) { /* 忽略 */ }
+      }
+
       this.el.goTitle.textContent = run.won ? '🏆 深渊领主陨落 · 通关！' : '💀 你被淹没了';
       this.el.goTitle.classList.toggle('win', run.won);
       const kps = run.time > 0 ? (p.kills / run.time).toFixed(1) : '0';
@@ -496,14 +616,15 @@
         const pips = v.max > 1
           ? `<div class="lvbar">${Array.from({ length: v.max }, (_, k) =>
               `<i class="pip${k < v.lv ? ' on' : ''}"></i>`).join('')}</div>` : '';
-        return `<div class="card${v.isNew ? ' new' : ''}${v.evo ? ' evo' : ''}" data-idx="${i}">
+        const cursor = this.padCursor === i ? ' pad' : '';
+        return `<div class="card${v.isNew ? ' new' : ''}${v.evo ? ' evo' : ''}${cursor}" data-idx="${i}">
           ${v.evo ? '<div class="card-evo">进化</div>' : v.isNew ? '<div class="card-new">新</div>' : ''}
           <div class="ico">${v.ico}</div>
           <div class="nm">${v.nm}</div>
           <div class="ty">${v.ty}</div>
           <div class="ds">${v.ds}</div>
           ${pips}
-          <div class="key">按 <kbd>${i + 1}</kbd></div>
+          <div class="key">按 <kbd>${i + 1}</kbd>${this.padCursor === i ? ' · 🎮 A 确认' : ''}</div>
         </div>`;
       }).join('');
       this.el.cards.querySelectorAll('.card').forEach((el) => {
@@ -615,6 +736,28 @@
         this.el.comboTag.classList.remove('hidden');
         this.el.comboTag.textContent = `🔥 ${g.killStreak} 连杀`;
       } else this.el.comboTag.classList.add('hidden');
+
+      // 下一事件倒计时
+      const ev = this.el.nextEvent;
+      if (ev) {
+        if (g.finalSpawned) {
+          ev.textContent = '👑 击败深渊领主';
+          ev.className = 'next-event boss';
+        } else {
+          const waveIn = 90 - (g.t % 90);
+          const miniIn = Math.max(0, g.nextMini - g.t);
+          let text, cls = 'next-event';
+          if (miniIn < waveIn) {
+            text = `👹 小 Boss ${this.fmt(miniIn)}`;
+            if (miniIn < 10) cls += ' soon';
+          } else {
+            text = `🌊 敌潮 ${this.fmt(waveIn)}`;
+            if (waveIn < 10) cls += ' soon';
+          }
+          ev.textContent = text;
+          ev.className = cls;
+        }
+      }
     },
 
     /* ---------- 输入 ---------- */
@@ -630,6 +773,30 @@
         else if (g.state === 'paused') g.resume();
       }
       if (g.state === 'menu' && k === 'enter') this.startGame();
+    },
+
+    /* ---------- 手柄回调 ---------- */
+    onPadSkip() {
+      const g = global.DSGame;
+      if (g.state !== 'levelup') return;
+      g.skipCard();
+      this.afterCard();
+    },
+    onPadReroll() {
+      const g = global.DSGame;
+      if (g.state !== 'levelup') return;
+      if (g.rerollCards()) { this.pendingCards = g.pendingCards; this.renderCards(); }
+    },
+    onPadNav(dir) {
+      const g = global.DSGame;
+      if (g.state !== 'levelup') return;
+      const n = (this.pendingCards || []).length;
+      if (!n) return;
+      if (this.padCursor == null) this.padCursor = 0;
+      if (dir === 'left') this.padCursor = (this.padCursor + n - 1) % n;
+      else if (dir === 'right') this.padCursor = (this.padCursor + 1) % n;
+      else if (dir === 'up' || dir === 'down') this.pickCard(this.padCursor);
+      this.renderCards();
     },
 
     toggleMute() {

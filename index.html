@@ -36,6 +36,7 @@
     <div id="loadout" class="loadout"></div>
     <div id="warning" class="warning hidden">⚠️ 强大敌人正在逼近……</div>
     <div id="comboTag" class="combo-tag hidden"></div>
+    <div id="nextEvent" class="next-event">下一波 00:90</div>
   </div>
 
   <!-- ===================== 升级三选一 ===================== -->
@@ -64,6 +65,7 @@
 
       <nav class="tabs" id="tabs">
         <button class="tab active" data-tab="play">▶ 开始</button>
+        <button class="tab" data-tab="daily">📅 挑战</button>
         <button class="tab" data-tab="shop">🛒 商店</button>
         <button class="tab" data-tab="ach">🏆 成就</button>
         <button class="tab" data-tab="best">📖 图鉴</button>
@@ -97,6 +99,26 @@
             <div id="bestList" class="best-list"></div>
           </aside>
         </div>
+      </section>
+
+      <!-- 挑战 -->
+      <section class="panel" data-panel="daily">
+        <div class="panel-head">
+          <span>📅 每日挑战 · <b id="dailyDate">—</b></span>
+          <span class="dim" id="streakText"></span>
+        </div>
+        <div id="dailyCard" class="challenge-card"></div>
+        <div class="panel-head" style="margin-top:16px">
+          <span>🎲 随机挑战</span>
+          <span class="dim">随机组合 3 个修正器，种子固定可复现</span>
+        </div>
+        <div id="randomMods" class="mod-preview"></div>
+        <div class="challenge-actions">
+          <button id="btnRandomChallenge" class="btn ghost">🔄 换一组修正器</button>
+          <button id="btnStartChallenge" class="btn primary">▶ 开始挑战</button>
+        </div>
+        <div class="panel-head" style="margin-top:18px"><span>📊 挑战记录</span></div>
+        <div id="challengeHistory" class="challenge-history"></div>
       </section>
 
       <!-- 商店 -->
@@ -137,7 +159,7 @@
       </section>
 
       <div class="menu-foot">
-        <span class="ver">v2.0.0 · <a id="repoLink" href="https://github.com/xyl554067-gif/roguelike-survivors" target="_blank" rel="noopener">源码</a> · <a href="https://xyl554067-gif.github.io/roguelike-survivors/" target="_blank" rel="noopener">在线试玩</a></span>
+        <span class="ver">v2.1.0 · <a id="repoLink" href="https://github.com/xyl554067-gif/roguelike-survivors" target="_blank" rel="noopener">源码</a> · <a href="https://xyl554067-gif.github.io/roguelike-survivors/" target="_blank" rel="noopener">在线试玩</a></span>
         <button id="btnWipe" class="link-btn">清空存档</button>
       </div>
     </div>
