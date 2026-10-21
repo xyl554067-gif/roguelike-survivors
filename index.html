@@ -3,93 +3,199 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<meta name="description" content="夜刃求生 · 一款纯前端 Canvas 实现的肉鸽割草生存小游戏，30+ 可叠加武器与被动，无依赖开箱即玩。" />
-<meta name="theme-color" content="#0d0b16" />
+<meta name="description" content="夜刃求生 · 纯前端 Canvas 肉鸽割草生存游戏：9 名角色、16 种武器与进化、持续成长商店、成就与图鉴，无依赖开箱即玩。" />
+<meta name="theme-color" content="#0b0913" />
 <title>夜刃求生 · Roguelike Survivors</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
-    <canvas id="game" width="1280" height="720"></canvas>
+<div id="app">
+  <canvas id="game" width="1280" height="720"></canvas>
 
-    <!-- HUD -->
-    <div id="hud" class="hidden">
-      <div class="hud-top">
-        <div class="bar-wrap">
-          <div class="bar hp"><div id="hpFill" class="fill"></div><span id="hpText" class="bar-label">100 / 100</span></div>
-          <div class="bar xp"><div id="xpFill" class="fill"></div><span id="xpText" class="bar-label">Lv.1</span></div>
-        </div>
-        <div class="hud-stats">
-          <div class="stat"><b id="timeText">00:00</b><i>存活</i></div>
-          <div class="stat"><b id="killText">0</b><i>击杀</i></div>
-          <div class="stat"><b id="goldText">0</b><i>金币</i></div>
-        </div>
+  <!-- ===================== HUD ===================== -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="bar-wrap">
+        <div class="bar hp"><div id="hpFill" class="fill"></div><span id="hpText" class="bar-label">100 / 100</span></div>
+        <div class="bar xp"><div id="xpFill" class="fill"></div><span id="xpText" class="bar-label">Lv.1</span></div>
+        <div class="bar dash"><div id="dashFill" class="fill"></div><span id="dashText" class="bar-label">冲刺就绪</span></div>
       </div>
-      <div id="loadout" class="loadout"></div>
-      <div id="warning" class="warning hidden">⚠️ 强大敌人正在逼近……</div>
-    </div>
-
-    <!-- 升级三选一 -->
-    <div id="levelup" class="overlay hidden">
-      <div class="overlay-inner">
-        <div class="levelup-head">
-          <h2>⬆️ 升级！<span id="levelupSub">选择一项强化</span></h2>
-          <div class="head-btns">
-            <button id="btnReroll" class="btn ghost" title="重掷卡池">🎲 重掷 <span id="rerollLeft">3</span></button>
-            <button id="btnSkip" class="btn ghost" title="跳过并获得金币">跳过 +10💰</button>
-          </div>
-        </div>
-        <div id="cards" class="cards"></div>
-        <p class="tip">提示：重复选择同一项可提升其等级，最高 5 级；被动永久生效。</p>
+      <div class="hud-stats">
+        <div class="stat"><b id="timeText">00:00</b><i>存活</i></div>
+        <div class="stat"><b id="killText">0</b><i>击杀</i></div>
+        <div class="stat"><b id="goldText">0</b><i>金币</i></div>
       </div>
     </div>
 
-    <!-- 主菜单 -->
-    <div id="menu" class="overlay">
-      <div class="overlay-inner narrow">
-        <h1 class="logo">夜刃求生</h1>
-        <p class="tagline">ROGUELIKE · SURVIVORS · 割草一小时，尸山叠万丈</p>
-        <div class="menu-rows">
-          <label class="row">
-            <span>角色</span>
-            <select id="selChar"></select>
-          </label>
-          <label class="row">
-            <span>难度</span>
-            <select id="selDiff"></select>
-          </label>
-        </div>
-        <div id="charInfo" class="char-info"></div>
-        <button id="btnStart" class="btn primary big">▶ 开始游戏</button>
-        <div class="menu-foot">
-          <span class="keys">
-            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 方向键移动 ·
-            <kbd>P</kbd> 暂停 · <kbd>Esc</kbd> 菜单 · <kbd>M</kbd> 静音 · 触屏：拖动屏幕
-          </span>
-          <span class="ver">v1.0.0 · <a href="https://github.com/xyl554067-gif/roguelike-survivors" target="_blank" rel="noopener">源码</a></span>
-        </div>
-      </div>
+    <div id="bossBar" class="boss-bar hidden">
+      <div class="boss-name" id="bossName">BOSS</div>
+      <div class="bar boss"><div id="bossFill" class="fill"></div></div>
     </div>
 
-    <!-- 结算 -->
-    <div id="gameover" class="overlay hidden">
-      <div class="overlay-inner narrow">
-        <h2 id="goTitle" class="logo small">💀 你被淹没了</h2>
-        <div id="goStats" class="go-stats"></div>
-        <div class="go-btns">
-          <button id="btnRetry" class="btn primary">↻ 再来一局</button>
-          <button id="btnMenu" class="btn ghost">主菜单</button>
-        </div>
-        <p id="goTip" class="tip"></p>
-      </div>
-    </div>
-
-    <div id="paused" class="paused hidden">⏸ 已暂停</div>
-    <div id="toast" class="toast"></div>
-    <button id="btnMute" class="corner-btn" title="静音 (M)">🔊</button>
+    <div id="loadout" class="loadout"></div>
+    <div id="warning" class="warning hidden">⚠️ 强大敌人正在逼近……</div>
+    <div id="comboTag" class="combo-tag hidden"></div>
   </div>
 
-  <script src="game.js"></script>
+  <!-- ===================== 升级三选一 ===================== -->
+  <div id="levelup" class="overlay hidden">
+    <div class="overlay-inner">
+      <div class="levelup-head">
+        <h2>⬆️ 升级！<span id="levelupSub">选择一项强化</span></h2>
+        <div class="head-btns">
+          <button id="btnReroll" class="btn ghost" title="重新抽取卡牌">🎲 重掷 <span id="rerollLeft">3</span></button>
+          <button id="btnBanish" class="btn ghost" title="放逐一张卡（本局不再出现）">🚫 放逐</button>
+          <button id="btnSkip" class="btn ghost" title="跳过并获得金币">跳过 +15💰</button>
+        </div>
+      </div>
+      <div id="cards" class="cards"></div>
+      <p class="tip">提示：重复选择同一项可提升等级；武器满级 + 指定被动满级可触发<b class="evo-hint">进化</b>。</p>
+    </div>
+  </div>
+
+  <!-- ===================== 主菜单 ===================== -->
+  <div id="menu" class="overlay">
+    <div class="overlay-inner wide">
+      <div class="brand">
+        <h1 class="logo">夜刃求生</h1>
+        <p class="tagline">ROGUELIKE · SURVIVORS · 割草一小时，尸山叠万丈</p>
+      </div>
+
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="play">▶ 开始</button>
+        <button class="tab" data-tab="shop">🛒 商店</button>
+        <button class="tab" data-tab="ach">🏆 成就</button>
+        <button class="tab" data-tab="best">📖 图鉴</button>
+        <button class="tab" data-tab="set">⚙️ 设置</button>
+      </nav>
+
+      <!-- 开始 -->
+      <section class="panel active" data-panel="play">
+        <div class="play-grid">
+          <div class="play-left">
+            <div class="menu-rows">
+              <label class="row"><span>角色</span><select id="selChar"></select></label>
+              <label class="row"><span>难度</span><select id="selDiff"></select></label>
+            </div>
+            <div id="charInfo" class="char-info"></div>
+            <button id="btnStart" class="btn primary big">▶ 开始游戏</button>
+            <div class="keys-line">
+              <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 ·
+              <kbd>空格</kbd> 冲刺 · <kbd>P</kbd> 暂停 · <kbd>1</kbd>-<kbd>3</kbd> 选卡 · <kbd>M</kbd> 静音
+            </div>
+          </div>
+          <aside class="play-right">
+            <h3 class="side-title">本局目标</h3>
+            <ul class="goals">
+              <li>活过 <b>30:00</b> 并击杀 <b>深渊领主</b></li>
+              <li>每 <b>90 秒</b> 一次敌潮包围</li>
+              <li>每 <b>90 秒</b> 一名小 Boss（逐步变强）</li>
+              <li>拾取 💎 升级，💛 换金币入库</li>
+            </ul>
+            <h3 class="side-title">你的记录</h3>
+            <div id="bestList" class="best-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- 商店 -->
+      <section class="panel" data-panel="shop">
+        <div class="panel-head">
+          <span>💰 金币库：<b id="shopGold">0</b></span>
+          <span class="dim">金币在每局结算后入库；商店升级永久生效。</span>
+        </div>
+        <div id="shopList" class="shop-list"></div>
+      </section>
+
+      <!-- 成就 -->
+      <section class="panel" data-panel="ach">
+        <div class="panel-head">
+          <span>🏆 成就进度：<b id="achProgress">0 / 0</b></span>
+          <span class="dim">完成成就可获得金币奖励并解锁角色。</span>
+        </div>
+        <div id="achList" class="ach-list"></div>
+      </section>
+
+      <!-- 图鉴 -->
+      <section class="panel" data-panel="best">
+        <div class="panel-head">
+          <span>📖 图鉴</span>
+          <div class="filters" id="bestFilter">
+            <button class="chip active" data-filter="weapons">武器</button>
+            <button class="chip" data-filter="passives">被动</button>
+            <button class="chip" data-filter="enemies">敌人</button>
+            <button class="chip" data-filter="bosses">首领</button>
+          </div>
+        </div>
+        <div id="bestGrid" class="best-grid"></div>
+      </section>
+
+      <!-- 设置 -->
+      <section class="panel" data-panel="set">
+        <div class="settings-body" id="menuSettings"></div>
+      </section>
+
+      <div class="menu-foot">
+        <span class="ver">v2.0.0 · <a id="repoLink" href="https://github.com/xyl554067-gif/roguelike-survivors" target="_blank" rel="noopener">源码</a> · <a href="https://xyl554067-gif.github.io/roguelike-survivors/" target="_blank" rel="noopener">在线试玩</a></span>
+        <button id="btnWipe" class="link-btn">清空存档</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 暂停 ===================== -->
+  <div id="pause" class="overlay hidden">
+    <div class="overlay-inner narrow">
+      <h2 class="logo small">⏸ 已暂停</h2>
+      <div id="pauseBreakdown" class="build-view"></div>
+      <div class="go-btns">
+        <button id="btnResume" class="btn primary">继续</button>
+        <button id="btnPauseSet" class="btn ghost">设置</button>
+        <button id="btnRestart" class="btn ghost">重开</button>
+        <button id="btnQuit" class="btn ghost">放弃并返回</button>
+      </div>
+      <p class="tip">按 <kbd>P</kbd> 或 <kbd>Esc</kbd> 继续 · 放弃时本局金币仍会入库</p>
+    </div>
+  </div>
+
+  <!-- ===================== 结算 ===================== -->
+  <div id="gameover" class="overlay hidden">
+    <div class="overlay-inner">
+      <h2 id="goTitle" class="logo small">💀 你被淹没了</h2>
+      <div id="goStats" class="go-stats"></div>
+      <div class="go-cols">
+        <div class="go-panel"><h4>武器输出</h4><div id="goBreakdown" class="breakdown"></div></div>
+        <div class="go-panel"><h4>本局收获</h4><div id="goRewards" class="rewards"></div></div>
+      </div>
+      <div class="go-btns">
+        <button id="btnRetry" class="btn primary">↻ 再来一局</button>
+        <button id="btnMenu" class="btn ghost">主菜单</button>
+      </div>
+      <p id="goTip" class="tip"></p>
+    </div>
+  </div>
+
+  <!-- ===================== 设置弹窗 ===================== -->
+  <div id="settings" class="overlay hidden">
+    <div class="overlay-inner narrow">
+      <h2 class="logo small">⚙️ 设置</h2>
+      <div class="settings-body" id="modalSettings"></div>
+      <div class="go-btns"><button id="btnCloseSet" class="btn primary">完成</button></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="achPop" class="ach-pop hidden">
+    <div class="ach-pop-ico">🏆</div>
+    <div><div class="ach-pop-t">成就解锁</div><div class="ach-pop-n" id="achPopName"></div></div>
+  </div>
+  <button id="btnMute" class="corner-btn" title="静音 (M)">🔊</button>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/save.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>

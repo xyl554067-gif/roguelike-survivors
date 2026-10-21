@@ -1,0 +1,29 @@
+{
+  "name": "roguelike-survivors",
+  "version": "2.0.0",
+  "description": "夜刃求生 · 纯前端 Canvas 肉鸽割草生存游戏，零依赖，9 名角色 / 16 种武器与进化 / 商店 / 成就 / 图鉴",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node serve.js",
+    "dev": "node serve.js 5173",
+    "test": "node tools/selftest.js && node tools/uitest.js"
+  },
+  "keywords": [
+    "game",
+    "roguelike",
+    "survivors",
+    "canvas",
+    "html5",
+    "vampire-survivors"
+  ],
+  "author": "xyl554067-gif",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xyl554067-gif/roguelike-survivors.git"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
