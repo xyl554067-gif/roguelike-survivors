@@ -2,7 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0913" />
 <meta name="description" content="夜刃求生 · 纯前端 Canvas 肉鸽割草生存游戏：10 名角色（含大肥鱼）、17 种武器与进化、持续成长商店、成就与图鉴，无依赖开箱即玩。" />
 <meta name="theme-color" content="#0b0913" />
 <title>夜刃求生 · Roguelike Survivors</title>
@@ -79,8 +83,10 @@
             <div class="menu-rows">
               <label class="row"><span>角色</span><select id="selChar"></select></label>
               <label class="row"><span>难度</span><select id="selDiff"></select></label>
+              <label class="row"><span>模式</span><select id="selMode"></select></label>
             </div>
             <div id="charInfo" class="char-info"></div>
+            <div id="unlockBox" class="unlock-box hidden"></div>
             <button id="btnStart" class="btn primary big">▶ 开始游戏</button>
             <div class="keys-line">
               <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动 ·
@@ -89,11 +95,12 @@
           </div>
           <aside class="play-right">
             <h3 class="side-title">本局目标</h3>
-            <ul class="goals">
-              <li>活过 <b>30:00</b> 并击杀 <b>深渊领主</b></li>
+            <ul class="goals" id="goalList">
+              <li>在<b>难度时限</b>内存活，并击杀 <b>深渊领主</b></li>
               <li>每 <b>90 秒</b> 一次敌潮包围</li>
               <li>每 <b>90 秒</b> 一名小 Boss（逐步变强）</li>
-              <li>拾取 💎 升级，💛 换金币入库</li>
+              <li>拾取 💎 升级，每级自动提升属性</li>
+              <li>金币可在<b>局内商店</b>换补给</li>
             </ul>
             <h3 class="side-title">你的记录</h3>
             <div id="bestList" class="best-list"></div>
@@ -172,6 +179,7 @@
       <div id="pauseBreakdown" class="build-view"></div>
       <div class="go-btns">
         <button id="btnResume" class="btn primary">继续</button>
+        <button id="btnRunShop" class="btn ghost">🛒 局内商店</button>
         <button id="btnPauseSet" class="btn ghost">设置</button>
         <button id="btnRestart" class="btn ghost">重开</button>
         <button id="btnQuit" class="btn ghost">放弃并返回</button>
@@ -197,6 +205,19 @@
     </div>
   </div>
 
+  <!-- ===================== 局内商店 ===================== -->
+  <div id="runshop" class="overlay hidden">
+    <div class="overlay-inner wide">
+      <h2 class="logo small">🛒 局内商店</h2>
+      <div class="panel-head">
+        <span>本局金币：<b id="rsGold">0</b></span>
+        <span class="dim">只对当前这一局生效；价格随购买次数上涨。</span>
+      </div>
+      <div id="rsList" class="shop-list"></div>
+      <div class="go-btns"><button id="btnRsClose" class="btn primary">返回</button></div>
+    </div>
+  </div>
+
   <!-- ===================== 设置弹窗 ===================== -->
   <div id="settings" class="overlay hidden">
     <div class="overlay-inner narrow">
@@ -206,6 +227,28 @@
     </div>
   </div>
 
+  <!-- ===================== 触屏控制 ===================== -->
+  <div id="touchPad" class="touch-pad hidden">
+    <div id="joyZone" class="joy-zone">
+      <div id="joyBase" class="joy-base"><div id="joyKnob" class="joy-knob"></div></div>
+    </div>
+    <div class="touch-btns">
+      <button id="btnTouchPause" class="tb-btn tb-pause" aria-label="暂停">⏸</button>
+      <button id="btnTouchDash" class="tb-btn tb-dash" aria-label="冲刺">💨</button>
+    </div>
+  </div>
+
+  <!-- ===================== 横屏提示 ===================== -->
+  <div id="rotateHint" class="rotate-hint hidden">
+    <div class="rh-inner">
+      <div class="rh-ico">📱</div>
+      <div class="rh-title">请横屏游玩</div>
+      <div class="rh-desc">本作为横版割草，横屏能获得完整视野与操作空间。</div>
+      <button id="btnRotateOk" class="btn primary">仍然竖屏继续</button>
+    </div>
+  </div>
+
+  <button id="btnFullscreen" class="corner-btn corner-fs" title="全屏 (F)">⛶</button>
   <div id="toast" class="toast"></div>
   <div id="achPop" class="ach-pop hidden">
     <div class="ach-pop-ico">🏆</div>

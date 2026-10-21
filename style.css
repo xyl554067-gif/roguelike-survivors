@@ -21,17 +21,27 @@
 * { box-sizing: border-box; }
 html, body {
   margin: 0; padding: 0; height: 100%;
+  /* dvh：移动端浏览器地址栏收起/展开时不会把画面挤出屏幕 */
+  height: 100dvh;
   background: var(--bg); color: var(--ink);
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   overflow: hidden; touch-action: none;
   -webkit-user-select: none; user-select: none;
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
-#app { position: fixed; inset: 0; display: grid; place-items: center; }
+#app {
+  position: fixed; inset: 0;
+  /* 安全区：刘海屏/圆角屏不被遮挡 */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  display: grid; place-items: center;
+}
 canvas {
   display: block; background: #100d1c;
   box-shadow: 0 0 0 1px #241d3e, var(--shadow);
   border-radius: 10px;
+  touch-action: none;
 }
 .hidden { display: none !important; }
 .dim { color: var(--dim); }
@@ -604,4 +614,129 @@ body.big-text .slot { width: 38px; height: 38px; font-size: 19px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ============================ 角色解锁面板 ============================ */
+.unlock-box {
+  margin-top: 10px; padding: 12px 14px;
+  border: 1px solid rgba(255, 209, 102, .32);
+  background: rgba(255, 209, 102, .07);
+  border-radius: var(--r);
+}
+.ub-head { font-size: 13px; font-weight: 700; margin-bottom: 9px; color: var(--accent); }
+.ub-paths { display: flex; flex-direction: column; gap: 8px; }
+.ub-path {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+}
+.ub-path.buy { border-color: rgba(255, 209, 102, .34); }
+.ub-ico { font-size: 20px; width: 26px; text-align: center; flex: none; }
+.ub-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ub-txt b { font-size: 12.5px; }
+.ub-txt span { font-size: 11px; color: var(--dim); line-height: 1.45; }
+.ub-tip { margin-top: 8px; font-size: 11px; color: var(--dim); }
+.ci-lock { font-size: 11px; color: var(--accent); margin-left: 6px; }
+.ci-mode { font-size: 12px; margin-top: 6px; }
+.ci-modedesc { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 3px; }
+.ci-grow { font-size: 11px; color: #9be7c8; margin-top: 6px; }
+
+/* ============================ 局内商店 ============================ */
+#runshop .shop-list { max-height: 52vh; overflow-y: auto; }
+.shop-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; margin-bottom: 8px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+}
+.shop-item.poor { opacity: .55; }
+.shop-item.sold { opacity: .38; }
+.si-ico { font-size: 24px; width: 32px; text-align: center; flex: none; }
+.si-main { flex: 1; min-width: 0; }
+.si-name { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.si-tag { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: rgba(255, 209, 102, .18); color: var(--accent); font-weight: 600; }
+.si-own { font-size: 10px; color: var(--dim); font-weight: 500; }
+.si-desc { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 2px; }
+
+/* ============================ 触屏控制 ============================ */
+.touch-pad { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.joy-zone {
+  position: absolute; left: 0; bottom: 0;
+  width: 46vw; max-width: 280px; height: 42vh; max-height: 240px;
+  pointer-events: auto; touch-action: none;
+}
+.joy-base {
+  position: absolute; left: 50%; top: 50%;
+  width: 116px; height: 116px; margin: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(126, 232, 250, .10);
+  border: 2px solid rgba(126, 232, 250, .30);
+  pointer-events: none;
+}
+.joy-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 54px; height: 54px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(126, 232, 250, .42);
+  border: 2px solid rgba(126, 232, 250, .85);
+  box-shadow: 0 0 14px rgba(126, 232, 250, .5);
+}
+.touch-btns {
+  position: absolute; right: 20px; bottom: 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  pointer-events: auto;
+}
+.tb-btn {
+  width: 74px; height: 74px; border-radius: 50%;
+  font-size: 26px; color: #fff;
+  border: 2px solid rgba(255, 255, 255, .3);
+  background: rgba(0, 0, 0, .38);
+  display: grid; place-items: center;
+  touch-action: none; cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+}
+.tb-btn:active { transform: scale(.94); }
+.tb-dash { background: rgba(126, 232, 250, .26); border-color: rgba(126, 232, 250, .7); width: 88px; height: 88px; font-size: 30px; }
+.tb-pause { width: 54px; height: 54px; font-size: 18px; background: rgba(0, 0, 0, .34); }
+
+/* ============================ 横屏提示 ============================ */
+.rotate-hint {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center;
+  background: rgba(8, 6, 16, .94);
+  text-align: center; padding: 24px;
+}
+.rh-inner { max-width: 320px; }
+.rh-ico { font-size: 54px; animation: rot 2.2s ease-in-out infinite; }
+@keyframes rot {
+  0%, 45% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(-90deg); }
+}
+.rh-title { font-size: 19px; font-weight: 800; margin: 14px 0 8px; color: var(--accent); }
+.rh-desc { font-size: 12.5px; color: var(--dim); line-height: 1.6; margin-bottom: 18px; }
+
+.corner-fs { right: 60px; }
+
+/* ============================ 窄屏适配 ============================ */
+@media (max-width: 520px) {
+  .unlock-box { padding: 10px; }
+  .ub-path { flex-wrap: wrap; }
+  .ub-path .btn { margin-left: 36px; }
+  .si-ico { font-size: 20px; width: 26px; }
+  .joy-base { width: 96px; height: 96px; }
+  .joy-knob { width: 46px; height: 46px; }
+  .tb-dash { width: 74px; height: 74px; font-size: 26px; }
+  .corner-fs { right: 54px; }
+}
+
+/* 竖屏（手机）时把 HUD 压紧，给画面让出空间 */
+@media (orientation: portrait) and (max-width: 760px) {
+  .hud-top { top: 6px; left: 8px; right: 8px; gap: 8px; }
+  .bar-wrap { max-width: 58vw; }
+  .hud-stats { gap: 6px; }
+  .next-event { top: 74px; }
 }

@@ -24,28 +24,43 @@
       weapon: 'axe', tag: '暴击', unlock: null,
       desc: '暴击专精。<b>飞斧</b>高抛落地，基础暴击率 25%。' },
     { id: 'necro', name: '亡术 · 瑟莉卡', ico: '💀', hp: 86, spd: 1.00, might: 1.00, area: 1.00, proj: 0, magnet: 1.15, xp: 1.05, armor: 0, rev: 1, regen: 0,
-      weapon: 'bolt', tag: '复活', unlock: 'ach_kills_500',
+      weapon: 'bolt', tag: '复活', unlock: 'ach_kills_500', price: 800,
       desc: '自动索敌。<b>灵弹</b>追踪最近敌人，开局自带 1 次复活。' },
     { id: 'warden', name: '守誓者 · 塞恩', ico: '🛡️', hp: 128, spd: 0.95, might: 0.95, area: 1.05, proj: 0, magnet: 1.00, xp: 1.00, armor: 2, rev: 0, regen: 0.15,
-      weapon: 'bible', tag: '防御', unlock: 'ach_survive_10',
+      weapon: 'bible', tag: '防御', unlock: 'ach_survive_10', price: 1200,
       desc: '铁壁。<b>圣典</b>绕身旋转，开局 2 点护甲，血量最高。' },
     { id: 'alchemist', name: '炼金 · 芙蕾雅', ico: '⚗️', hp: 88, spd: 1.02, might: 0.98, area: 1.10, proj: 0, magnet: 1.35, xp: 1.08, armor: 0, rev: 0, regen: 0.1,
-      weapon: 'poison', tag: '持续', unlock: 'ach_gold_3000',
+      weapon: 'poison', tag: '持续', unlock: 'ach_gold_3000', price: 2000,
       desc: '毒云大师。<b>毒瓶</b>砸出持续毒池，拾取半径 +35%。' },
     { id: 'blademaster', name: '剑圣 · 无名', ico: '⚔️', hp: 96, spd: 1.06, might: 1.08, area: 1.00, proj: 0, magnet: 1.10, xp: 1.00, armor: 1, rev: 0, regen: 0,
-      weapon: 'spear', tag: '贯穿', unlock: 'ach_win',
+      weapon: 'spear', tag: '贯穿', unlock: 'ach_win', price: 3000,
       desc: '化身利刃。<b>光矛</b>直线贯穿，伤害与移速俱佳。' },
     { id: 'fatty', name: '大肥鱼', ico: '🐋', hp: 150, spd: 0.88, might: 0.80, area: 1.18, proj: 0, magnet: 1.45, xp: 1.12, armor: 1, rev: 0, regen: 0.3,
       weapon: 'whalesong', tag: '深海', unlock: null,
       desc: '来自深海的鲸娘。<b>鲸歌</b>荡出水波推开并减速群敌；血量与拾取范围极高，代价是行动迟缓、单体偏弱。' },
   ];
 
-  /* ============================ 难度 ============================ */
+  /* ============================ 难度 ============================
+     duration：本局时长（秒）。到达后深渊领主降临，击败即通关。
+     各难度时长不同：入门是快速单局，只有硬核/噩梦才需要长时间运营。
+  ================================================================ */
   const DIFFICULTIES = [
-    { id: 'easy', name: '休闲', hp: 0.80, dmg: 0.85, spd: 0.95, xp: 0.95, gold: 0.90, spawn: 0.85, tag: '怪更少更软，适合练手感' },
-    { id: 'normal', name: '标准', hp: 1.00, dmg: 1.00, spd: 1.00, xp: 1.00, gold: 1.00, spawn: 1.00, tag: '推荐的平衡曲线' },
-    { id: 'hard', name: '硬核', hp: 1.35, dmg: 1.25, spd: 1.08, xp: 1.15, gold: 1.20, spawn: 1.15, tag: '怪硬且凶，收益更高' },
-    { id: 'nightmare', name: '噩梦', hp: 1.80, dmg: 1.55, spd: 1.15, xp: 1.30, gold: 1.45, spawn: 1.35, tag: '刀尖跳舞，极限割草' },
+    { id: 'easy', name: '休闲', hp: 0.80, dmg: 0.85, spd: 0.95, xp: 0.95, gold: 0.90, spawn: 0.85, tag: '怪更少更软，适合练手感',
+      duration: 12 * 60, desc: '12 分钟一局，节奏轻快、容错高。' },
+    { id: 'normal', name: '标准', hp: 1.00, dmg: 1.00, spd: 1.00, xp: 1.00, gold: 1.00, spawn: 1.00, tag: '推荐的平衡曲线',
+      duration: 16 * 60, desc: '16 分钟一局，成长曲线完整。' },
+    { id: 'hard', name: '硬核', hp: 1.35, dmg: 1.25, spd: 1.08, xp: 1.15, gold: 1.20, spawn: 1.15, tag: '怪硬且凶，收益更高',
+      duration: 20 * 60, desc: '20 分钟一局，压力更大，金币与经验也更多。' },
+    { id: 'nightmare', name: '噩梦', hp: 1.80, dmg: 1.55, spd: 1.15, xp: 1.30, gold: 1.45, spawn: 1.35, tag: '刀尖跳舞，极限割草',
+      duration: 25 * 60, desc: '25 分钟一局，敌人血量与伤害大幅提升。' },
+  ];
+
+  /* ============================ 模式 ============================ */
+  const MODES = [
+    { id: 'campaign', name: '常规战役', ico: '⏱️', endless: false,
+      desc: '到达难度设定的时长后，深渊领主降临；击败它即为通关结算。' },
+    { id: 'endless', name: '无尽模式', ico: '♾️', endless: true,
+      desc: '没有终点：难度持续攀升直到倒下。每 5 分钟刷一名 Boss，没有最终决战，按存活时间与击杀记分。' },
   ];
 
   /* ============================ 武器 ============================ */
@@ -810,6 +825,51 @@
     lich:    { name: '深渊领主 · 卡尔', hp: 34000, spd: 60, dmg: 50, xp: 1500, gold: 1500, r: 76, color: '#b06bff', dark: '#5b2a8c', shape: 'boss', pattern: 'final' },
   };
 
+  /* ============================ 等级成长 ============================
+     等级不再只是「多一张卡」：每升一级都会自动累积基础属性，
+     避免中期出现「卡越来越多但人还是脆」的割裂感。
+     每次 recompute 都按当前等级重算，保证加减卡后数值依然一致。
+  ================================================================ */
+  const LEVEL_GROWTH = {
+    maxHpPerLevel: 1.6,     // 每级最大生命
+    mightPerLevel: 0.0025,  // 每级伤害乘区 +0.25%
+    areaPerLevel: 0.0018,   // 每级范围乘区 +0.18%
+    magnetPerLevel: 0.012,  // 每级拾取半径
+    regenPerLevel: 0.008,   // 每级每秒回复
+    armorEvery: 8,          // 每 8 级 +1 护甲
+    healPctPerLevel: 0.06,  // 升级时回复 6% 最大生命
+    healEveryKills: 100,    // 每 100 杀回复 8%
+    healPctPerKillMilestone: 0.08,
+    pierceEvery: 12,        // 每 12 级 +1 穿透
+  };
+
+  /* ============================ 局内商店 ============================
+     用「本局金币」购买，只对当前这一局生效。
+     step：每买一次价格的增量；max：本局限购次数（-1 表示不限）。
+  ================================================================ */
+  const RUN_SHOP = [
+    { id: 'heal', name: '治疗药水', ico: '💖', cost: 60, step: 40, max: -1,
+      desc: '立刻回复 40% 最大生命。', tag: '续航' },
+    { id: 'fullheal', name: '急救包', ico: '🩹', cost: 140, step: 90, max: 3,
+      desc: '立刻回满生命。', tag: '续航' },
+    { id: 'regenup', name: '生命回复', ico: '🌿', cost: 110, step: 70, max: 5,
+      desc: '每秒额外回复 +0.6 生命，永久生效至本局结束。', tag: '成长' },
+    { id: 'hpup', name: '强健体魄', ico: '❤️', cost: 90, step: 55, max: -1,
+      desc: '生命上限 +20，并立即回复 20。', tag: '成长' },
+    { id: 'might', name: '磨刀石', ico: '💪', cost: 120, step: 70, max: -1,
+      desc: '全部伤害 +8%。', tag: '输出' },
+    { id: 'armor', name: '护甲片', ico: '🛡️', cost: 100, step: 60, max: 6,
+      desc: '受到伤害 -1。', tag: '生存' },
+    { id: 'level', name: '秘传卷轴', ico: '⬆️', cost: 150, step: 100, max: -1,
+      desc: '立刻提升 1 级（可选择强化）。', tag: '成长' },
+    { id: 'reroll', name: '星运骰子', ico: '🎲', cost: 70, step: 50, max: 5,
+      desc: '重掷次数 +1。', tag: '辅助' },
+    { id: 'revive', name: '替身人偶', ico: '♻️', cost: 320, step: 260, max: 2,
+      desc: '死亡时原地复活一次（50% 生命）。', tag: '保命' },
+    { id: 'magnet', name: '全域吸引', ico: '🧲', cost: 45, step: 25, max: -1,
+      desc: '立即吸取场上全部经验宝石。', tag: '辅助' },
+  ];
+
   /* ============================ 道具 ============================ */
   const ITEMS = {
     heal:   { name: '治疗药水', ico: '💖', color: '#ff6b9d' },
@@ -918,9 +978,10 @@
   ];
 
   global.DSData = {
-    TAU, CHARACTERS, DIFFICULTIES, WEAPONS, EVOLUTIONS, PASSIVES,
+    TAU, CHARACTERS, DIFFICULTIES, MODES, WEAPONS, EVOLUTIONS, PASSIVES,
     ENEMY_TYPES, BOSS_TYPES, ITEMS, ACHIEVEMENTS, SHOP, MODIFIERS,
-    RUN_DURATION: 30 * 60,
+    LEVEL_GROWTH, RUN_SHOP,
+    RUN_DURATION: 16 * 60,
     MAX_ENEMIES: 380,
     MAX_PROJECTILES: 700,
     MAX_PARTICLES: 700,

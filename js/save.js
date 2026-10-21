@@ -29,6 +29,7 @@
       stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
       settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
       best: {},
+      purchasedChars: {},
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -65,6 +66,7 @@
       d.shop = old.shop || {};
       d.achievements = old.achievements || {};
       d.best = old.best || {};
+      d.purchasedChars = old.purchasedChars || {};
       d.gold = Number(old.gold) || 0;
       // v1 旧存档兼容：把旧 best 转成统计
       return d;
@@ -157,10 +159,18 @@
       return { got, all };
     },
 
-    /* ---------- 角色解锁 ---------- */
+    /* ---------- 角色解锁 ----------
+       两种途径：达成对应成就，或用金币直接购买。
+       购买后写入 data.purchasedChars。 */
     isCharUnlocked(c) {
+      if (!c) return false;
       if (!c.unlock) return true;
+      if (this.isPurchased(c)) return true;
       return this.unlocked(c.unlock);
+    },
+    isPurchased(c) {
+      const bought = this.data.purchasedChars;
+      return !!(c && bought && bought[c.id]);
     },
 
     /* ---------- 单局记录 ---------- */

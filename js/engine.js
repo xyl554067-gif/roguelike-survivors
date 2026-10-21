@@ -78,6 +78,15 @@
     keys: new Set(), dashQueued: false,
     pad: { connected: false, id: '', axes: [0, 0], prevButtons: [] },
     touch: { active: false, ox: 0, oy: 0, dx: 0, dy: 0, id: null },
+    /** 屏幕虚拟摇杆：由 UI 层直接写入，优先级高于拖拽 */
+    stick: { active: false, x: 0, y: 0 },
+    /** 是否启用触屏控件（启用后忽略「在画布上拖拽移动」） */
+    touchUi: false,
+    setStick(x, y, active) {
+      this.stick.active = !!active;
+      this.stick.x = clamp(x || 0, -1, 1);
+      this.stick.y = clamp(y || 0, -1, 1);
+    },
     init(canvas, hooks) {
       this.hooks = hooks || {};
       addEventListener('keydown', (e) => {
@@ -103,6 +112,8 @@
       });
 
       const start = (e) => {
+        // 启用虚拟摇杆后，画布拖拽不再驱动移动，避免两套操作打架
+        if (this.touchUi && e.touches) return;
         const t = e.touches ? e.touches[0] : e;
         this.touch.active = true; this.touch.ox = t.clientX; this.touch.oy = t.clientY;
         this.touch.dx = this.touch.dy = 0;
@@ -176,6 +187,8 @@
         if (px || py) { x = px; y = py; }
       }
       if (this.touch.active && (this.touch.dx || this.touch.dy)) { x = this.touch.dx; y = this.touch.dy; }
+      // 虚拟摇杆最后写入，优先级最高
+      if (this.stick.active && (this.stick.x || this.stick.y)) { x = this.stick.x; y = this.stick.y; }
       const m = Math.hypot(x, y);
       return m > 1 ? { x: x / m, y: y / m } : { x, y };
     },
@@ -303,6 +316,14 @@
       this.waveDone = {}; this.finalSpawned = false; this.won = false;
       this.spawnFrac = 0; this.itemAcc = 0; this.killStreak = 0; this.streakT = 0;
       this.runStats = { kills: 0, elites: 0, bosses: 0, dashes: 0, evolutions: 0, weaponsUsed: [], hitTaken: false };
+      // 模式与时长（菜单演示阶段也要有安全的默认值）
+      this.mode = D.MODES[0];
+      this.endless = false;
+      this.duration = (this.diff && this.diff.duration) || D.RUN_DURATION;
+      this.runShopBought = {};
+      // 局内商店购买的「持久型」加成，参与每次 recompute，不会被重算抹掉
+      this.runBonus = { hp: 0, might: 0, armor: 0, regen: 0 };
+      this.healMilestone = D.LEVEL_GROWTH.healEveryKills;
     },
 
     buildDemo() {
@@ -317,6 +338,7 @@
     /* ---------- 开局 ---------- */
     start(charId, diffId, opts) {
       opts = opts || {};
+      const mode = D.MODES.find((m) => m.id === (opts.mode || 'campaign')) || D.MODES[0];
       const ch = D.CHARACTERS.find((c) => c.id === charId) || D.CHARACTERS[0];
       const diff = D.DIFFICULTIES.find((d) => d.id === diffId) || D.DIFFICULTIES[1];
       this.char = ch; this.diff = diff;
@@ -330,6 +352,11 @@
 
       this.settings = Object.assign(this.settings, this.ui.settings || {});
       this.resetWorld();
+      // 必须在 resetWorld 之后设置：resetWorld 会把模式与时长重置为默认值
+      this.mode = mode;
+      this.endless = !!mode.endless;
+      // 无尽模式没有终点；常规模式用各难度自己的时长（12/16/20/25 分钟）
+      this.duration = this.endless ? Infinity : (diff.duration || D.RUN_DURATION);
       this.player = this.makePlayer(ch);
       this.addWeapon(this.player, ch.weapon);
       this.recompute(this.player);
@@ -340,7 +367,12 @@
       this.ui.onStart(this);
       AudioFX.init(); AudioFX.resume();
       const tag = this.challenge ? ` · ${this.challenge.name}` : '';
-      this.toast(`难度：${diff.name}${tag} · 活过 30 分钟并击败深渊领主`);
+      if (this.endless) {
+        this.toast(`♾️ 无尽模式 · ${diff.name}${tag} · 活到倒下为止`);
+      } else {
+        const mm = Math.round(this.duration / 60);
+        this.toast(`难度：${diff.name}${tag} · 活过 ${mm} 分钟并击败深渊领主`);
+      }
     },
 
     /** 把挑战修正器汇总成运行时参数 */
@@ -388,13 +420,43 @@
       s.cooldown = 0; s.projspeed = 1; s.crit = 0.05; s.critdmg = 0.6;
       s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
       s.maxHpFlat = 0; s.pierce = 0; s.luck = (m.luckBonus || 0); s.thorns = 0;
+      s.dashCdMul = 1;   // 每次重算复位，避免修正器被反复累乘
+
+      /* 等级成长：每升一级自动累积基础属性。
+         这里按当前等级整体重算，所以加减被动后数值依然自洽。 */
+      const LG = D.LEVEL_GROWTH;
+      const LV = Math.max(0, (p.level || 1) - 1);
+      s.maxHpFlat += LV * LG.maxHpPerLevel;
+      s.might *= 1 + LV * LG.mightPerLevel;
+      s.area *= 1 + LG.areaPerLevel * LV;
+      s.magnet += LV * LG.magnetPerLevel;
+      s.regen = s.regen + LV * LG.regenPerLevel + (this.runBonus ? this.runBonus.regen : 0);
+      s.armor += Math.floor(LV / LG.armorEvery);
+      s.pierce += Math.floor(LV / LG.pierceEvery);
+      // 局内商店购买的持久加成
+      if (this.runBonus) {
+        s.maxHpFlat += this.runBonus.hp;
+        s.might += this.runBonus.might;
+        s.armor += this.runBonus.armor;
+      }
+      p.levelBonus = {
+        maxHp: Math.round(LV * LG.maxHpPerLevel),
+        might: Math.round(LV * LG.mightPerLevel * 1000) / 10,
+        area: Math.round(LG.areaPerLevel * LV * 1000) / 10,
+        armor: Math.floor(LV / LG.armorEvery),
+        pierce: Math.floor(LV / LG.pierceEvery),
+      };
+
       for (const id in p.passives) {
         const def = D.PASSIVES[id];
         for (let i = 0; i < p.passives[id]; i++) def.each(s, p);
       }
       s.cooldown = clamp(s.cooldown * (m.cdMul || 1), 0, 0.82);
       s.dashCdMul = (s.dashCdMul || 1) * (m.dashCdMul || 1);
+      const prevMax = p.maxHp;
+      // 生命上限提高时同步补足差值，避免「升级 / 买了血量后反而更缺血」
       p.maxHp = (ch.hp + s.maxHpFlat) * (m.hpMul || 1);
+      if (prevMax > 0 && p.maxHp > prevMax) p.hp += (p.maxHp - prevMax);
       p.hp = Math.min(p.hp, p.maxHp);
     },
 
@@ -505,6 +567,66 @@
     },
 
     /* ---------- 玩家 ---------- */
+    /** 局内商店：某条目已购买次数 */
+    runShopCount(id) { return (this.runShopBought && this.runShopBought[id]) || 0; },
+    /** 局内商店：当前价格（随购买次数递增） */
+    runShopPrice(def) { return Math.round(def.cost + def.step * this.runShopCount(def.id)); },
+    runShopAvailable(def) { return def.max < 0 ? true : this.runShopCount(def.id) < def.max; },
+
+    buyRunShop(id) {
+      const p = this.player;
+      const def = D.RUN_SHOP.find((x) => x.id === id);
+      if (!def) return { ok: false, reason: 'missing' };
+      if (!this.runShopAvailable(def)) return { ok: false, reason: 'max' };
+      const price = this.runShopPrice(def);
+      if (p.gold < price) return { ok: false, reason: 'gold' };
+
+      p.gold -= price;
+      this.runShopBought[id] = this.runShopCount(id) + 1;
+
+      switch (def.id) {
+        case 'heal': this.healPlayer(p.maxHp * 0.4, '治疗'); break;
+        case 'fullheal': this.healPlayer(p.maxHp, '急救'); break;
+        case 'regenup': this.runBonus.regen += 0.6; break;
+        case 'hpup': this.runBonus.hp += 20; this.healPlayer(20, '体魄'); break;
+        case 'might': this.runBonus.might += 0.08; break;
+        case 'armor': this.runBonus.armor += 1; break;
+        case 'level': p.pendingLevels++; this.pendingLevels = p.pendingLevels; break;
+        case 'reroll': this.rerolls = (this.rerolls || 0) + 1; break;
+        case 'revive': p.stat.revive += 1; break;
+        case 'magnet': for (const g of this.gems) g.magnet = true; break;
+      }
+      this.recompute(p);
+      this.sfx('pickup');
+      this.toast(`🛒 ${def.ico} ${def.name} -${price}💰`);
+      return { ok: true, price, count: this.runShopCount(id) };
+    },
+
+    /** 统一的治疗入口：负责数值净化、飘字与上限钳制 */
+    healPlayer(amount, label) {
+      const p = this.player;
+      if (!p || p.dead) return 0;
+      let amt = Number(amount);
+      if (!Number.isFinite(amt) || amt <= 0) return 0;
+      amt = Math.round(amt * ((this.mod && this.mod.healMul) || 1));
+      const real = Math.min(amt, p.maxHp - p.hp);
+      if (real <= 0) return 0;
+      p.hp += real;
+      this.fx.text(p.x, p.y - 26, '+' + real, '#7dffb0', 16);
+      if (label) this.fx.text(p.x, p.y - 46, label, '#a7f3d0', 12);
+      return real;
+    },
+
+    /** 每达到一定击杀数回复一次，给长时间割草提供稳定续航 */
+    checkKillMilestone() {
+      const p = this.player;
+      const step = D.LEVEL_GROWTH.healEveryKills;
+      if (p.kills < (this.healMilestone || step)) return;
+      this.healMilestone = (this.healMilestone || step) + step;
+      this.healPlayer(p.maxHp * D.LEVEL_GROWTH.healPctPerKillMilestone, '连斩补给');
+      this.fx.nova(p.x, p.y, 90, 'rgba(125,255,176,0.35)');
+    },
+
     tryDash() {
       const p = this.player;
       if (this.state !== 'playing' || !p || p.dashCd > 0 || p.dashT > 0) return;
@@ -609,9 +731,22 @@
         this.toast('⚠️ 小 Boss 即将降临');
       }
       if (this.t < this.nextMini - 8) this._miniWarned = false;
-      if (this.t >= D.RUN_DURATION && !this.finalSpawned) {
-        this.finalSpawned = true;
-        this.spawnBoss('lich', true);
+      if (!this.endless) {
+        // 常规模式：到达难度设定的时长 → 深渊领主降临
+        if (this.t >= this.duration && !this.finalSpawned) {
+          this.finalSpawned = true;
+          this.spawnBoss('lich', true);
+        }
+      } else {
+        // 无尽模式：永远不出终局 Boss，改为每 5 分钟加压一次
+        const tier = Math.floor(this.t / 300);
+        if (tier > 0 && !this.waveDone['e' + tier]) {
+          this.waveDone['e' + tier] = 1;
+          this.spawnMiniBoss();
+          if (tier % 2 === 0) {
+            this.toast(`♾️ 无尽：第 ${tier * 5} 分钟，压力提升`);
+          }
+        }
       }
     },
 
@@ -940,6 +1075,7 @@
       e.dead = true;
       p.kills++;
       this.runStats.kills++;
+      this.checkKillMilestone();
       if (src) p.weaponKills[src] = (p.weaponKills[src] || 0) + 1;
       this.killStreak++; this.streakT = 1.4;
 
@@ -1255,7 +1391,13 @@
             p.xp -= p.xpNeed; p.level++; p.xpNeed = this.xpFor(p.level);
             p.pendingLevels++; this.pendingLevels = p.pendingLevels; ups++;
           }
-          if (ups) { this.sfx('levelup'); this.fx.nova(p.x, p.y, 120, 'rgba(126,232,250,0.4)'); }
+          if (ups) {
+            this.sfx('levelup');
+            this.fx.nova(p.x, p.y, 120, 'rgba(126,232,250,0.4)');
+            // 每条稳定回复渠道之一：升级即回血，让「变强」和「续航」同时发生
+            this.healPlayer(p.maxHp * D.LEVEL_GROWTH.healPctPerLevel, '升级');
+            this.recompute(p);
+          }
           continue;
         }
         if (g.t > 28) this.gems.splice(i, 1);
@@ -1388,7 +1530,11 @@
         weapons: p.weapons.length, weaponsUsed: this.runStats.weaponsUsed.slice(),
         hitTaken: this.runStats.hitTaken,
         runGold: p.totalGold,
+        mode: this.mode.id, endless: this.endless,
       };
+      // 无尽模式计分：存活时间是主要权重，击杀与等级作为加成
+      run.score = won ? 0
+        : Math.round(this.t * 10 + p.kills * 2 + p.level * 25 + this.runStats.bosses * 300);
       const unlocked = global.DSSave.recordRun(run);
       global.DSSave.data.stats.bestTime = Math.max(global.DSSave.data.stats.bestTime, this.t);
       global.DSSave.flush();

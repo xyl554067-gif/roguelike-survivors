@@ -28,15 +28,21 @@
         'bossBar', 'bossName', 'bossFill', 'levelupSub', 'rerollLeft',
         'goTitle', 'goStats', 'goTip', 'goBreakdown', 'goRewards',
         'pauseBreakdown', 'achPopName', 'btnMute', 'selChar', 'selDiff', 'nextEvent',
+        'selMode', 'unlockBox', 'rsGold', 'rsList', 'goalList',
+        'touchPad', 'joyZone', 'joyBase', 'joyKnob', 'rotateHint',
       ];
       ids.forEach((id) => { this.el[id] = document.getElementById(id); });
       this.settings = Object.assign({}, Save.data.settings);
+      this.selectedMode = this.settings.lastMode || 'campaign';
 
       this.bindMenu();
       this.bindLevelUp();
       this.bindGameOver();
       this.bindPause();
       this.bindSettings();
+      this.bindRunShop();
+      this.bindTouch();
+      this.bindDisplay();
       this.buildSelectors();
       this.renderAll();
       this.audio = global.DSAudio;
@@ -58,7 +64,17 @@
         this.selectedDiff = this.el.selDiff.value;
         Save.data.settings.lastDiff = this.selectedDiff;
         Save.touch();
+        this.renderCharInfo();
       };
+      if (this.el.selMode) {
+        this.el.selMode.onchange = () => {
+          this.selectedMode = this.el.selMode.value;
+          this.settings.lastMode = this.selectedMode;
+          Save.data.settings.lastMode = this.selectedMode;
+          Save.touch();
+          this.renderCharInfo();
+        };
+      }
       document.getElementById('btnStart').onclick = () => this.startGame();
       document.getElementById('btnWipe').onclick = () => this.wipeSave();
       this.el.btnMute.onclick = () => this.toggleMute();
@@ -125,6 +141,190 @@
         g.endRun(false);
       };
       document.getElementById('btnPauseSet').onclick = () => this.show('settings');
+      const rs = document.getElementById('btnRunShop');
+      if (rs) rs.onclick = () => this.openRunShop();
+    },
+
+    /* ---------- 局内商店 ---------- */
+    bindRunShop() {
+      const close = document.getElementById('btnRsClose');
+      if (close) close.onclick = () => this.closeRunShop();
+    },
+
+    openRunShop() {
+      const g = global.DSGame;
+      if (!g || !g.player) return;
+      this.renderRunShop();
+      this.show('runshop');
+      this.hide('pause');
+      g.state = 'shop';
+    },
+
+    closeRunShop() {
+      this.hide('runshop');
+      const g = global.DSGame;
+      if (!g) return;
+      // 商店里买了「秘传卷轴」会攒下待升级，返回后直接弹卡
+      if (g.player && g.player.pendingLevels > 0 && g.state === 'shop') {
+        g.state = 'playing';
+        this.openLevelUp(g);
+      } else if (g.state === 'shop') {
+        g.state = 'paused';
+        this.show('pause');
+      }
+    },
+
+    renderRunShop() {
+      const g = global.DSGame;
+      const p = g.player;
+      const list = this.el.rsList;
+      if (!list || !p) return;
+      this.el.rsGold.textContent = p.gold;
+      list.innerHTML = D.RUN_SHOP.map((def) => {
+        const n = g.runShopCount(def.id);
+        const price = g.runShopPrice(def);
+        const sold = !g.runShopAvailable(def);
+        const afford = p.gold >= price;
+        return `
+          <div class="shop-item ${sold ? 'sold' : afford ? '' : 'poor'}">
+            <div class="si-ico">${def.ico}</div>
+            <div class="si-main">
+              <div class="si-name">${def.name} <span class="si-tag">${def.tag}</span>
+                ${n ? `<span class="si-own">已购 ${n}${def.max > 0 ? '/' + def.max : ''}</span>` : ''}</div>
+              <div class="si-desc">${def.desc}</div>
+            </div>
+            <button class="btn ${afford && !sold ? 'primary' : 'ghost'}" data-buy="${def.id}"
+              ${afford && !sold ? '' : 'disabled'}>
+              ${sold ? '已售罄' : `${price}💰`}</button>
+          </div>`;
+      }).join('');
+      list.querySelectorAll('[data-buy]').forEach((btn) => {
+        btn.onclick = () => {
+          const r = global.DSGame.buyRunShop(btn.dataset.buy);
+          if (r.ok) { this.renderRunShop(); }
+          else if (r.reason === 'gold') this.toast('💰 金币不足');
+          else if (r.reason === 'max') this.toast('🚫 已达购买上限');
+        };
+      });
+    },
+
+    /* ---------- 触屏控制 ---------- */
+    isTouchDevice() {
+      if (this.settings.forceTouchPad) return true;
+      return ('ontouchstart' in window)
+        || (navigator.maxTouchPoints || 0) > 0
+        || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    },
+
+    bindTouch() {
+      const pad = this.el.touchPad;
+      if (!pad) return;
+      const zone = this.el.joyZone, base = this.el.joyBase, knob = this.el.joyKnob;
+      if (!zone || !base || !knob) return;
+      const R = 52;                       // 摇杆半径（px）
+      let active = false, cx = 0, cy = 0;
+      const reset = () => {
+        active = false;
+        base.style.transform = 'translate(-50%, -50%)';
+        knob.style.transform = 'translate(-50%, -50%)';
+        global.DSInput.setStick(0, 0, false);
+      };
+      const pos = (t) => {
+        let dx = t.clientX - cx, dy = t.clientY - cy;
+        const m = Math.hypot(dx, dy);
+        if (m > R) { dx = dx / m * R; dy = dy / m * R; }
+        knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        const dead = 6;
+        const on = m > dead;
+        global.DSInput.setStick(on ? dx / R : 0, on ? dy / R : 0, on);
+      };
+      const down = (e) => {
+        e.preventDefault();
+        const t = e.touches ? e.touches[0] : e;
+        const r = zone.getBoundingClientRect();
+        cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+        // 摇杆底座跟随落点，手指不必精准命中中心
+        base.style.left = (t.clientX - r.left) + 'px';
+        base.style.top = (t.clientY - r.top) + 'px';
+        active = true;
+        pos(t);
+      };
+      const move = (e) => {
+        if (!active) return;
+        e.preventDefault();
+        pos(e.touches ? e.touches[0] : e);
+      };
+      zone.addEventListener('touchstart', down, { passive: false });
+      zone.addEventListener('touchmove', move, { passive: false });
+      zone.addEventListener('touchend', (e) => { e.preventDefault(); reset(); });
+      zone.addEventListener('touchcancel', reset);
+      zone.addEventListener('mousedown', down);
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', reset);
+
+      const dash = document.getElementById('btnTouchDash');
+      const pause = document.getElementById('btnTouchPause');
+      if (dash) {
+        const go = (e) => { e.preventDefault(); global.DSGame && global.DSGame.tryDash(); };
+        dash.addEventListener('touchstart', go, { passive: false });
+        dash.addEventListener('mousedown', go);
+      }
+      if (pause) {
+        const go = (e) => { e.preventDefault(); global.DSGame && global.DSGame.togglePause(); };
+        pause.addEventListener('touchstart', go, { passive: false });
+        pause.addEventListener('mousedown', go);
+      }
+      this.applyTouchPad();
+    },
+
+    /** 根据设备（或设置）决定是否显示虚拟摇杆 */
+    applyTouchPad() {
+      const pad = this.el.touchPad;
+      if (!pad) return;
+      const on = this.isTouchDevice();
+      this.touchEnabled = on;
+      pad.classList.toggle('hidden', !on);
+      if (global.DSInput) global.DSInput.touchUi = on;
+      // 触屏时隐藏「键盘按键」提示行
+      const keys = document.querySelector('.keys-line');
+      if (keys) keys.style.display = on ? 'none' : '';
+    },
+
+    /* ---------- 显示与横屏 ---------- */
+    bindDisplay() {
+      const fs = document.getElementById('btnFullscreen');
+      if (fs) fs.onclick = () => this.toggleFullscreen();
+      const ok = document.getElementById('btnRotateOk');
+      if (ok) ok.onclick = () => {
+        this.hide('rotateHint');
+        this._rotateDismissed = true;
+      };
+      this.checkOrientation();
+      window.addEventListener('orientationchange', () => setTimeout(() => this.checkOrientation(), 220));
+      window.addEventListener('resize', () => this.checkOrientation());
+    },
+
+    toggleFullscreen() {
+      const el = document.documentElement;
+      try {
+        if (!document.fullscreenElement) {
+          (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
+        } else {
+          (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
+        }
+      } catch (e) { this.toast('当前浏览器不支持全屏'); }
+    },
+
+    /** 竖屏且是小屏设备时提示横屏；用户手动关闭后不再打扰 */
+    checkOrientation() {
+      const hint = this.el.rotateHint;
+      if (!hint) return;
+      const small = Math.min(window.innerWidth, window.innerHeight) < 560;
+      const portrait = window.innerHeight > window.innerWidth;
+      const need = this.isTouchDevice() && small && portrait && !this._rotateDismissed;
+      hint.classList.toggle('hidden', !need);
+      // 竖屏时顺便建议全屏，能拿回浏览器地址栏占用的高度
+      if (need && !document.fullscreenElement) this._suggestFs = true;
     },
 
     bindSettings() {
@@ -216,29 +416,132 @@
       const ch = this.dailyChallenge || { ...Save.dailyInfo(), name: '每日挑战' };
       this.activeChallenge = ch;
       this.hide('menu'); this.hide('gameover'); this.hide('pause'); this.hide('settings');
-      global.DSGame.start(this.selectedChar, this.selectedDiff, { challenge: ch, seed: ch.seed });
+      global.DSGame.start(this.selectedChar, this.selectedDiff,
+        { challenge: ch, seed: ch.seed, mode: this.selectedMode });
     },
 
     /* ---------- 构建选择器 ---------- */
     buildSelectors() {
-      const sc = this.el.selChar, sd = this.el.selDiff;
+      const sc = this.el.selChar, sd = this.el.selDiff, sm = this.el.selMode;
       sc.innerHTML = D.CHARACTERS.map((c) => {
         const unlocked = Save.isCharUnlocked(c);
         const ico = unlocked ? c.ico : '🔒';
-        const suffix = unlocked ? '' : ' · 未解锁';
+        // 锁定角色直接把「最省事的解锁方式」写进选项，避免玩家只能看到「未解锁」
+        let suffix = '';
+        if (!unlocked) {
+          suffix = c.price ? ` · 未解锁（${c.price}💰 或成就）` : ' · 未解锁（成就）';
+        }
         return `<option value="${c.id}" ${unlocked ? '' : 'disabled'}>${ico} ${c.name}${suffix}</option>`;
       }).join('');
-      sd.innerHTML = D.DIFFICULTIES.map((d) =>
-        `<option value="${d.id}">${d.name} — ${d.tag}</option>`).join('');
+      sd.innerHTML = D.DIFFICULTIES.map((d) => {
+        const mm = Math.round((d.duration || D.RUN_DURATION) / 60);
+        return `<option value="${d.id}">${d.name} — ${mm} 分钟 · ${d.tag}</option>`;
+      }).join('');
+      if (sm) {
+        sm.innerHTML = D.MODES.map((m) =>
+          `<option value="${m.id}">${m.ico} ${m.name}</option>`).join('');
+      }
 
       const savedChar = Save.data.settings.lastChar;
       const firstUnlocked = D.CHARACTERS.find((c) => Save.isCharUnlocked(c));
       this.selectedChar = (savedChar && Save.isCharUnlocked(D.CHARACTERS.find((c) => c.id === savedChar) || {}))
         ? savedChar : firstUnlocked.id;
       this.selectedDiff = Save.data.settings.lastDiff || 'normal';
+      this.selectedMode = Save.data.settings.lastMode || 'campaign';
       sc.value = this.selectedChar;
       sd.value = this.selectedDiff;
+      if (sm) sm.value = this.selectedMode;
       this.renderCharInfo();
+    },
+
+    /** 已购买（金币直购）解锁的角色 */
+    isPurchased(c) {
+      const bought = Save.data.purchasedChars;
+      return !!(bought && bought[c.id]);
+    },
+
+    /** 角色的解锁途径清单 */
+    unlockPaths(c) {
+      const paths = [];
+      if (c.price) {
+        paths.push({
+          kind: 'buy', ico: '💰',
+          title: `金币直购 · ${c.price} 💰`,
+          desc: '在结算后金币会入库，攒够即可直接买下，不用等成就。',
+        });
+      }
+      if (c.unlock) {
+        const a = D.ACHIEVEMENTS.find((x) => x.id === c.unlock);
+        if (a) {
+          paths.push({
+            kind: 'ach', ico: a.ico || '🏆',
+            title: `达成成就 · ${a.name}`,
+            desc: a.desc + (a.reward ? `（奖励 ${a.reward}💰）` : ''),
+            ach: a,
+          });
+        }
+      }
+      if (!paths.length) paths.push({ kind: 'free', ico: '✅', title: '初始可用', desc: '无需解锁。' });
+      return paths;
+    },
+
+    /** 成就进度文本（用于解锁面板） */
+    achProgressText(a) {
+      switch (a.id) {
+        case 'ach_kills_500': return `累计击杀 ${Save.data.stats.kills} / 500`;
+        case 'ach_survive_10': return `最佳存活 ${this.fmt(Save.data.stats.bestTime)} / 10:00`;
+        case 'ach_gold_3000': return `累计金币 ${Save.data.stats.goldEarned} / 3000`;
+        case 'ach_win': return Save.data.stats.wins > 0 ? '已通关 ✅' : '尚未通关（击败深渊领主）';
+        default: return a.desc;
+      }
+    },
+
+    renderUnlockBox() {
+      const box = this.el.unlockBox;
+      if (!box) return;
+      const c = D.CHARACTERS.find((x) => x.id === this.selectedChar) || D.CHARACTERS[0];
+      if (Save.isCharUnlocked(c)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+
+      const canBuy = !!c.price;
+      const afford = canBuy && Save.gold >= c.price;
+      const paths = this.unlockPaths(c);
+      box.classList.remove('hidden');
+      box.innerHTML = `
+        <div class="ub-head">🔒 ${c.name} 尚未解锁 —— 任选一种方式解锁</div>
+        <div class="ub-paths">
+          ${paths.map((p) => `
+            <div class="ub-path ${p.kind}">
+              <div class="ub-ico">${p.ico}</div>
+              <div class="ub-txt">
+                <b>${p.title}</b>
+                <span>${p.ach ? this.achProgressText(p.ach) : p.desc}</span>
+              </div>
+              ${p.kind === 'buy' ? `<button class="btn ${afford ? 'primary' : 'ghost'}"
+                 data-buy="${c.id}" ${afford ? '' : 'disabled'}>
+                 ${afford ? '立即解锁' : `金币不足（${Save.gold}/${c.price}）`}</button>` : ''}
+            </div>`).join('')}
+        </div>
+        ${canBuy ? `<div class="ub-tip">当前金币库：<b>${Save.gold}</b>💰 · 金币在每局结算后入库</div>`
+        : '<div class="ub-tip">该角色只能通过成就解锁。</div>'}`;
+
+      box.querySelectorAll('[data-buy]').forEach((btn) => {
+        btn.onclick = () => this.buyChar(btn.dataset.buy);
+      });
+    },
+
+    buyChar(id) {
+      const c = D.CHARACTERS.find((x) => x.id === id);
+      if (!c || !c.price) return;
+      if (Save.isCharUnlocked(c)) return;
+      if (!Save.spendGold(c.price)) { this.toast('💰 金币不足'); return; }
+      if (!Save.data.purchasedChars) Save.data.purchasedChars = {};
+      Save.data.purchasedChars[id] = Date.now();
+      Save.save();
+      this.toast(`🎉 已解锁 ${c.ico} ${c.name}！`);
+      this.selectedChar = id;
+      this.buildSelectors();
+      this.renderShop();
+      this.renderAchievements();
     },
 
     renderCharInfo() {
@@ -247,11 +550,16 @@
       const diff = D.DIFFICULTIES.find((d) => d.id === this.selectedDiff) || D.DIFFICULTIES[1];
       const best = Save.data.best[c.id];
       const locked = !Save.isCharUnlocked(c);
-      const unlockAch = c.unlock ? D.ACHIEVEMENTS.find((a) => a.id === c.unlock) : null;
+      const mode = D.MODES.find((m) => m.id === this.selectedMode) || D.MODES[0];
+      const dur = Math.round((diff.duration || D.RUN_DURATION) / 60);
+      let lockMsg = '';
+      if (locked) lockMsg = c.price
+        ? `🔒 未解锁：${c.price}💰 购买，或达成成就`
+        : '🔒 未解锁：达成成就';
       this.el.charInfo.innerHTML = `
         <div class="ci-head"><span class="ci-ico">${c.ico}</span>
           <div><b>${c.name}</b><span class="ci-tag">${c.tag}</span>
-          ${locked ? `<span class="ci-lock">🔒 需解锁：${unlockAch ? unlockAch.name : '成就'}</span>` : ''}</div>
+          ${locked ? `<span class="ci-lock">${lockMsg}</span>` : ''}</div>
         </div>
         <div class="ci-desc">${c.desc}</div>
         <div class="ci-stats">
@@ -263,8 +571,12 @@
         </div>
         <div class="ci-weapon">初始武器：<b>${w.ico} ${w.name}</b></div>
         <div class="ci-diff">难度：<b>${diff.name}</b> · ${diff.tag}</div>
+        <div class="ci-mode">模式：<b>${mode.ico} ${mode.name}</b> · ${mode.endless ? '无时长上限' : `${dur} 分钟`}</div>
+        <div class="ci-modedesc">${mode.endless ? mode.desc : (diff.desc || '')}</div>
+        <div class="ci-grow">📈 每级成长：生命 +${D.LEVEL_GROWTH.maxHpPerLevel} · 伤害 +${(D.LEVEL_GROWTH.mightPerLevel * 100).toFixed(2)}% · 每 ${D.LEVEL_GROWTH.armorEvery} 级 +1 护甲</div>
         ${best ? `<div class="ci-best">个人最佳：${this.fmt(best.time)} · Lv.${best.level} · ${best.kills} 杀${best.won ? ' · 🏆 通关' : ''}</div>` : ''}
         ${this.tipsFor(c.id)}`;
+      this.renderUnlockBox();
     },
 
     /** 角色专属小提示，帮助新手理解玩法 */
@@ -401,6 +713,7 @@
         { k: 'autoPause', t: '失焦自动暂停', d: '切换到其它窗口时暂停' },
         { k: 'minimap', t: '小地图', d: '右下角显示敌人分布' },
         { k: 'autoAim', t: '自动瞄准', d: '静止时自动朝向最近敌人（建议开启）' },
+        { k: 'forceTouchPad', t: '强制显示触屏控件', d: '在电脑上也能调出虚拟摇杆与按钮（用于调试或触屏笔记本）' },
         { k: 'bigText', t: '大字号', d: '放大 HUD 与菜单文字，便于阅读' },
         { k: 'lowFx', t: '低特效模式', d: '一键关闭粒子/伤害数字/屏幕震动' },
         { k: 'showFps', t: '显示 FPS', d: '调试用，显示帧率与实体数' },
@@ -439,6 +752,7 @@
               });
               this.toast('🌑 低特效模式已开启');
             }
+            if (cb.dataset.set === 'forceTouchPad') this.applyTouchPad();
             if (global.DSGame) Object.assign(global.DSGame.settings, this.settings);
           };
         });
@@ -732,13 +1046,24 @@
       this.el.hpText.textContent = `${Math.max(0, Math.ceil(p.hp))} / ${Math.round(p.maxHp)}`;
       this.el.xpFill.style.transform = `scaleX(${Math.max(0, Math.min(1, p.xp / p.xpNeed))})`;
       this.el.xpText.textContent = `Lv.${p.level}`;
-      this.el.timeText.textContent = this.fmt(g.t);
+      // 常规模式显示「已过 / 总时长」，无尽模式只显示已存活时间
+      const dur = g.duration || D.RUN_DURATION;
+      this.el.timeText.textContent = g.endless
+        ? `${this.fmt(g.t)} ∞`
+        : `${this.fmt(g.t)} / ${this.fmt(dur)}`;
       this.el.killText.textContent = p.kills;
       this.el.goldText.textContent = p.totalGold;
 
       const dashPct = 1 - Math.min(1, p.dashCd / Math.max(0.01, 2.4 * s.dashCdMul));
       this.el.dashFill.style.transform = `scaleX(${dashPct})`;
-      this.el.dashText.textContent = p.dashCd > 0 ? `冲刺 ${p.dashCd.toFixed(1)}s` : '冲刺就绪 (空格)';
+      this.el.dashText.textContent = p.dashCd > 0 ? `冲刺 ${p.dashCd.toFixed(1)}s`
+        : (this.touchEnabled ? '冲刺就绪' : '冲刺就绪 (空格)');
+
+      // 首次攒够钱时提示一次局内商店，避免玩家不知道有这个系统
+      if (!this._shopHinted && p.gold >= D.RUN_SHOP[0].cost) {
+        this._shopHinted = true;
+        this.toast('🛒 暂停菜单可打开「局内商店」换取补给');
+      }
 
       const boss = g.enemies.find((e) => e.boss);
       if (boss) {
@@ -747,7 +1072,7 @@
         this.el.bossFill.style.transform = `scaleX(${Math.max(0, boss.hp / boss.maxHp)})`;
       } else this.el.bossBar.classList.add('hidden');
 
-      const danger = boss || (g.t > D.RUN_DURATION - 10 && !g.finalSpawned);
+      const danger = boss || (!g.endless && g.t > dur - 10 && !g.finalSpawned);
       this.el.warning.classList.toggle('hidden', !danger);
 
       if (g.killStreak >= 10) {
@@ -761,11 +1086,21 @@
         if (g.finalSpawned) {
           ev.textContent = '👑 击败深渊领主';
           ev.className = 'next-event boss';
+        } else if (g.endless) {
+          // 无尽模式：没有终局，只提示下一次加压
+          const tier = Math.floor(g.t / 300) + 1;
+          const left = Math.max(0, tier * 300 - g.t);
+          ev.textContent = `♾️ 压力提升 ${this.fmt(left)}`;
+          ev.className = 'next-event' + (left < 10 ? ' soon' : '');
         } else {
           const waveIn = 90 - (g.t % 90);
           const miniIn = Math.max(0, g.nextMini - g.t);
+          const finalIn = Math.max(0, dur - g.t);
           let text, cls = 'next-event';
-          if (miniIn < waveIn) {
+          if (finalIn < miniIn && finalIn < waveIn) {
+            text = `👑 决战 ${this.fmt(finalIn)}`;
+            if (finalIn < 30) cls += ' soon';
+          } else if (miniIn < waveIn) {
             text = `👹 小 Boss ${this.fmt(miniIn)}`;
             if (miniIn < 10) cls += ' soon';
           } else {
@@ -835,7 +1170,7 @@
       const c = D.CHARACTERS.find((x) => x.id === this.selectedChar);
       if (!c || !Save.isCharUnlocked(c)) { this.toast('🔒 该角色尚未解锁'); return; }
       this.hide('menu'); this.hide('gameover'); this.hide('pause'); this.hide('settings');
-      global.DSGame.start(this.selectedChar, this.selectedDiff);
+      global.DSGame.start(this.selectedChar, this.selectedDiff, { mode: this.selectedMode });
     },
 
     toMenu() {
