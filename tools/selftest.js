@@ -97,10 +97,11 @@ const Game = sandbox.DSGame;
 
 /* ---------------- 数据完整性 ---------------- */
 console.log('\n\x1b[1m[1] 数据完整性\x1b[0m');
-check(D.CHARACTERS.length >= 9, `角色数量 ${D.CHARACTERS.length} ≥ 9`);
+check(D.CHARACTERS.length >= 10, `角色数量 ${D.CHARACTERS.length} ≥ 10`);
 check(Object.keys(D.WEAPONS).length >= 25, `武器总数 ${Object.keys(D.WEAPONS).length} ≥ 25（含进化）`);
 const baseWeapons = Object.values(D.WEAPONS).filter((w) => !w.evolved);
-check(baseWeapons.length === 16, `基础武器 ${baseWeapons.length} = 16`);
+// 17 = 16 把通用武器 + 「大肥鱼」专属武器「鲸歌」
+check(baseWeapons.length === 17, `基础武器 ${baseWeapons.length} = 17`);
 check(Object.keys(D.PASSIVES).length >= 18, `被动 ${Object.keys(D.PASSIVES).length} ≥ 18`);
 check(Object.keys(D.ENEMY_TYPES).length >= 16, `敌人类型 ${Object.keys(D.ENEMY_TYPES).length} ≥ 16`);
 check(Object.keys(D.BOSS_TYPES).length >= 5, `首领 ${Object.keys(D.BOSS_TYPES).length} ≥ 5`);

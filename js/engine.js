@@ -362,7 +362,7 @@
     makePlayer(ch) {
       const stat = {
         might: ch.might, speed: ch.spd, cooldown: 0, area: ch.area, duration: 1, proj: ch.proj,
-        projspeed: 0, magnet: ch.magnet, armor: ch.armor, crit: 0.05, critdmg: 0.6, regen: ch.regen,
+        projspeed: 1, magnet: ch.magnet, armor: ch.armor, crit: 0.05, critdmg: 0.6, regen: ch.regen,
         revive: ch.rev, greed: 0, xpGain: ch.xp, maxHpFlat: 0, pierce: 0, luck: 0, thorns: 0,
         shopMight: 0, shopSpeed: 0, shopGreed: 0, shopXp: 0, dashCdMul: 1, bonusRerolls: 0,
       };
@@ -384,7 +384,9 @@
       s.area = ch.area; s.duration = 1; s.proj = ch.proj;
       s.magnet = ch.magnet; s.armor = ch.armor; s.regen = ch.regen * (m.healMul || 1);
       s.revive = m.noRevive ? 0 : ch.rev;
-      s.cooldown = 0; s.projspeed = 0; s.crit = 0.05; s.critdmg = 0.6;      s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
+      // 基线：projspeed 是「乘数」，必须为 1；被动「迅捷」在此基础上叠加增量
+      s.cooldown = 0; s.projspeed = 1; s.crit = 0.05; s.critdmg = 0.6;
+      s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
       s.maxHpFlat = 0; s.pierce = 0; s.luck = (m.luckBonus || 0); s.thorns = 0;
       for (const id in p.passives) {
         const def = D.PASSIVES[id];
@@ -420,10 +422,11 @@
     /* ---------- 难度曲线 ---------- */
     curve() {
       const m = this.t / 60;
+      // 缓和成长曲线：让玩家的清怪速度能跟得上刷怪速度
       return {
-        hp: 1 + m * 0.42 + Math.max(0, m - 15) * 0.36,
-        dmg: 1 + m * 0.15,
-        speed: 1 + Math.min(0.28, m * 0.01),
+        hp: 1 + m * 0.32 + Math.max(0, m - 15) * 0.30,
+        dmg: 1 + m * 0.09,
+        speed: 1 + Math.min(0.24, m * 0.008),
       };
     },
 
@@ -510,9 +513,9 @@
       if (!dx && !dy) { dx = Math.cos(p.aimAng); dy = Math.sin(p.aimAng); }
       const m = Math.hypot(dx, dy) || 1;
       p.dashDirX = dx / m; p.dashDirY = dy / m;
-      p.dashT = 0.17;
-      p.dashCd = 2.4 * p.stat.dashCdMul;
-      p.invul = Math.max(p.invul, 0.32);
+      p.dashT = 0.19;
+      p.dashCd = 2.0 * p.stat.dashCdMul;
+      p.invul = Math.max(p.invul, 0.45);
       this.runStats.dashes++;
       this.sfx('dash');
     },
@@ -577,8 +580,8 @@
     updateSpawns(dt) {
       if (this.enemies.length >= D.MAX_ENEMIES) return;
       const m = this.t / 60;
-      // 起手更温和：前 2 分钟压力明显降低，之后逐步加码
-      const ramp = m < 2 ? 0.9 + m * 0.3 : 1.5 + (m - 2) * 0.62 + Math.max(0, m - 15) * 0.9;
+      // 起手更温和：前 2 分钟几乎无压，之后线性加码但斜率放缓
+      const ramp = m < 2 ? 0.75 + m * 0.25 : 1.25 + (m - 2) * 0.40 + Math.max(0, m - 15) * 0.70;
       const per = ramp * this.diff.spawn * ((this.mod && this.mod.spawnMul) || 1);
       this.spawnFrac += per * dt;
       const list = this.availableTypes();
@@ -672,9 +675,12 @@
         hp: scaled, maxHp: scaled, bossCd: 0,
         spd: def.spd * this.diff.spd, dmg: def.dmg * c.dmg * this.diff.dmg,
         flash: 0, dead: false, boss: true, elite: true, final: !!final,
+        // 必须携带 xp / gold：缺失会让掉落的宝石经验为 NaN，
+        // 玩家拾取后 p.xp 永久变成 NaN，导致再也无法升级（曾经的「卡 14 级」元凶）
+        xp: def.xp, gold: def.gold,
         armor: (def.armor || 6) + Math.floor(this.t / 420),
         frozen: 0, stun: 0, slowed: 0, burn: null, anim: 0,
-        pattern: def.pattern, pT: 0, pState: 0, minionCd: 2,
+        pattern: def.pattern, pT: 0, pState: 0, minionCd: 2, warn: 0,
       };
       this.enemies.push(e);
       this.sfx('boss');
@@ -789,11 +795,11 @@
         this.damagePlayer(e.dmg * c.dmg * this.diff.dmg, e);
         if (e.def.slowOnHit) p.slow = Math.max(p.slow || 0, e.def.slowOnHit);
       } else if (e.boss && d < e.r + p.r + 4) {
-        // Boss 接触伤害：压到 40% 且自带 1.1s 冷却，贴身不会连续秒人
+        // Boss 接触伤害：压到 20% 且自带 1.5s 冷却，贴身不再等于连续放血
         e.bossCd = (e.bossCd || 0) - dt;
         if (e.bossCd <= 0) {
-          e.bossCd = 1.1;
-          this.damagePlayer(e.dmg * 0.4, e);
+          e.bossCd = 1.5;
+          this.damagePlayer(e.dmg * 0.2, e);
         }
       }
 
@@ -803,57 +809,76 @@
 
     bossAI(e, dt, ux, uy, d, spd) {
       e.pT += dt;
+      // ── 技能预警：蓄力期间锁死开火方向，给玩家侧向走位的机会 ──
+      if (e.warn > 0) {
+        e.warn -= dt;
+        e.x += ux * spd * 0.15 * dt; e.y += uy * spd * 0.15 * dt;
+        if (e.warnW == null) e.warnW = 0;
+        e.warnW += dt;
+        this.fx.ring(e.x, e.y, e.r + 14 + Math.abs(Math.sin(e.warnW * 12)) * 10, 'rgba(255,120,140,0.55)');
+        if (e.warn <= 0) {
+          e.warnW = 0;
+          this.volley(e, e.warnN, e.warnSpd, e.warnSpiral, e.warnAng);
+        }
+        return;
+      }
+      // 开火：先进入预警，不再瞬发
+      const aim = () => { e.warn = 0.8; e.warnW = 0; e.warnAng = Math.atan2(uy, ux); };
       if (e.pattern === 'chase') {
         e.x += ux * spd * dt; e.y += uy * spd * dt;
-        if (e.pT > 6) { e.pT = 0; this.volley(e, 12, 240); }
+        if (e.pT > 6.5) { e.pT = 0; aim(); e.warnN = 8; e.warnSpd = 200; e.warnSpiral = false; }
       } else if (e.pattern === 'summon') {
-        if (d > 210) { e.x += ux * spd * dt; e.y += uy * spd * dt; }
+        if (d > 230) { e.x += ux * spd * dt; e.y += uy * spd * dt; }
         e.minionCd -= dt;
         if (e.minionCd <= 0) {
-          e.minionCd = 4.5;
-          for (let i = 0; i < 4; i++) {
-            const a = this.rand(0, TAU);
-            this.spawnEnemy(e.def.minion || 'skeleton',
-              { x: e.x + Math.cos(a) * (e.r + 30), y: e.y + Math.sin(a) * (e.r + 30) }, 1.2);
-          }
-          this.fx.nova(e.x, e.y, e.r * 2, 'rgba(111,211,255,0.32)');
+          e.minionCd = 6.0;
+          this.summonFor(e, 3, 'skeleton');
         }
-        if (e.pT > 7) { e.pT = 0; this.volley(e, 16, 200); }
+        if (e.pT > 7.5) { e.pT = 0; aim(); e.warnN = 10; e.warnSpd = 185; e.warnSpiral = false; }
       } else if (e.pattern === 'dash') {
         if (e.pState === 0) {
           e.x += ux * spd * dt; e.y += uy * spd * dt;
-          if (e.pT > 3.4) { e.pT = 0; this.volley(e, 10, 260); }
-          if (d > 130 && e.pT > 1.2) { e.pState = 1; e.pT = 0; e.aim = { x: ux, y: uy }; }
+          if (e.pT > 3.6) { e.pT = 0; aim(); e.warnN = 7; e.warnSpd = 215; e.warnSpiral = false; }
+          // 拉开距离才起跳，避免贴脸无解突刺
+          if (d > 190 && e.pT > 1.4) { e.pState = 1; e.pT = 0; e.aim = { x: ux, y: uy }; }
         } else if (e.pState === 1) {
-          if (e.pT > 0.5) { e.pState = 2; e.pT = 0; }
+          // 起手预警：原地蓄力并画出冲刺指引
+          this.fx.ring(e.x, e.y, e.r + 12, 'rgba(255,180,92,0.5)');
+          if (e.pT > 0.85) { e.pState = 2; e.pT = 0; }
         } else {
-          e.x += e.aim.x * 740 * dt; e.y += e.aim.y * 740 * dt;
+          e.x += e.aim.x * 600 * dt; e.y += e.aim.y * 600 * dt;
           this.fx.burst(e.x, e.y, e.def.color, 2, 1);
-          if (e.pT > 0.85) { e.pState = 0; e.pT = 0; }
+          if (e.pT > 0.7) { e.pState = 0; e.pT = 0; }
         }
       } else if (e.pattern === 'final') {
-        const want = 190;
-        const dir = d > want ? 1 : -0.45;
+        const want = 220;
+        const dir = d > want ? 1 : -0.5;
         e.x += ux * spd * dir * dt; e.y += uy * spd * dir * dt;
         e.minionCd -= dt;
         if (e.minionCd <= 0) {
-          e.minionCd = 4.5;
-          for (let i = 0; i < 6; i++) {
-            const a = this.rand(0, TAU);
-            this.spawnEnemy(this.pick(['brute', 'elite', 'skeleton', 'gargoyle']),
-              { x: e.x + Math.cos(a) * (e.r + 40), y: e.y + Math.sin(a) * (e.r + 40) }, 1.2);
-          }
+          e.minionCd = 7.0;
+          this.summonFor(e, 4, this.pick(['brute', 'elite', 'skeleton', 'gargoyle']));
         }
-        if (e.pT > 3.2) { e.pT = 0; this.volley(e, 20, 235, true); }
+        if (e.pT > 4.2) { e.pT = 0; aim(); e.warnN = 14; e.warnSpd = 200; e.warnSpiral = true; }
       }
     },
 
-    volley(e, n, spd, spiral) {
-      const base = Math.atan2(this.player.y - e.y, this.player.x - e.x);
+    summonFor(e, n, pickId) {
+      const id = pickId || e.def.minion || 'skeleton';
       for (let i = 0; i < n; i++) {
-        const a = spiral ? base + (i / n) * TAU : base + (i - n / 2) * 0.12;
+        const a = this.rand(0, TAU);
+        this.spawnEnemy(id,
+          { x: e.x + Math.cos(a) * (e.r + 40), y: e.y + Math.sin(a) * (e.r + 40) }, 1.2);
+      }
+      this.fx.nova(e.x, e.y, e.r * 2, 'rgba(111,211,255,0.32)');
+    },
+
+    volley(e, n, spd, spiral, ang) {
+      const base = ang == null ? Math.atan2(this.player.y - e.y, this.player.x - e.x) : ang;
+      for (let i = 0; i < n; i++) {
+        const a = spiral ? base + (i / n) * TAU : base + (i - n / 2) * 0.16;
         this.summons.push({ x: e.x, y: e.y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
-          r: 9, dmg: e.dmg * 0.5, life: 4.2, kind: 'orb', color: e.def.color });
+          r: 9, dmg: e.dmg * 0.38, life: 3.4, kind: 'orb', color: e.def.color });
       }
       this.sfx('thunder');
     },
@@ -922,8 +947,10 @@
       this.spawnGem(e.x, e.y, Math.round(e.xp * p.stat.xpGain * this.diff.xp),
         Math.round(e.gold * (1 + p.stat.greed) * this.diff.gold));
 
-      // 道具掉落
-      if (!e.boss && this.random() < 0.055 * (1 + luck)) this.dropItem(e.x, e.y);
+      // 道具掉落：提高频率，让「失血后能回血」成为可持续循环的一环
+      if (!e.boss && this.random() < 0.09 * (1 + luck)) this.dropItem(e.x, e.y);
+      // 精英与宝箱怪必定留下补给，避免硬骨头白打
+      if (!e.boss && (e.def.elite || e.id === 'mimic')) this.dropItem(e.x, e.y, 'heal');
       if (e.def.boomOnDeath) {
         this.explode(e.x, e.y, e.def.boomOnDeath, e.dmg * 2, { src: 'boom', hostile: true });
       }
@@ -947,8 +974,12 @@
 
     spawnGem(x, y, xp, gold) {
       if (this.gems.length > 900) this.gems.shift();
+      // 数值净化：Math.max(1, NaN) 仍是 NaN，必须显式兜底，
+      // 否则一颗坏宝石就能把 p.xp 污染成 NaN 并永久锁死升级
+      const xpv = Number.isFinite(xp) ? Math.max(1, xp) : 1;
+      const gv = Number.isFinite(gold) ? gold : 0;
       this.gems.push({ x: x + this.rand(-6, 6), y: y + this.rand(-6, 6),
-        xp: Math.max(1, xp), gold: gold || 0, t: 0,
+        xp: xpv, gold: gv, t: 0,
         vx: this.rand(-40, 40), vy: this.rand(-40, 40), magnet: false });
     },
 
@@ -956,9 +987,10 @@
       this.chests.push({ x, y, r: mini ? 16 : 22, t: 0, mini: !!mini });
     },
 
-    dropItem(x, y) {
-      const kinds = ['heal', 'magnet', 'bomb', 'gold'];
-      const kind = this.pick(kinds);
+    dropItem(x, y, force) {
+      // heal 权重更高：玩家的回血主要靠它
+      const kinds = ['heal', 'heal', 'heal', 'magnet', 'bomb', 'gold'];
+      const kind = force || this.pick(kinds);
       this.items.push({ x, y, kind, t: 0, r: 13, def: D.ITEMS[kind] });
     },
 
@@ -1002,9 +1034,12 @@
 
     shoot(p, cfg) {
       if (this.projectiles.length > D.MAX_PROJECTILES) return null;
+      // 速度兜底：非法 / 过小的一律纠正为下限，避免弹体原地不动或 NaN
+      let spd = Number(cfg.spd);
+      if (!isFinite(spd) || spd <= 1) spd = 360;
       const q = {
         x: p.x, y: p.y, ox: p.x, oy: p.y,
-        vx: Math.cos(cfg.ang) * cfg.spd, vy: Math.sin(cfg.ang) * cfg.spd,
+        vx: Math.cos(cfg.ang) * spd, vy: Math.sin(cfg.ang) * spd,
         dmg: cfg.dmg || 0, pierce: cfg.pierce || 0, life: cfg.life || 2, r: cfg.r || 6,
         kind: cfg.kind || 'kunai', src: cfg.src || 'other', kb: cfg.kb || 0,
         critChance: cfg.critChance, critDmgBonus: cfg.critDmgBonus || 0,
@@ -1207,10 +1242,14 @@
         }
 
         if (d2 < (p.r + 9) ** 2) {
-          p.xp += g.xp;
-          if (g.gold) { p.gold += g.gold; p.totalGold += g.gold; }
+          // 自愈兜底：即使上游仍出现非法值，也绝不污染 p.xp
+          const add = Number(g.xp);
+          p.xp += Number.isFinite(add) ? add : 0;
+          if (!Number.isFinite(p.xp)) p.xp = 0;
+          if (Number.isFinite(g.gold)) { p.gold += g.gold; p.totalGold += g.gold; }
           this.sfx('pickup');
           this.gems.splice(i, 1);
+          if (!Number.isFinite(p.xp) || !Number.isFinite(p.xpNeed)) { p.xp = 0; p.xpNeed = this.xpFor(p.level); }
           let ups = 0;
           while (p.xp >= p.xpNeed) {
             p.xp -= p.xpNeed; p.level++; p.xpNeed = this.xpFor(p.level);
@@ -1241,8 +1280,10 @@
       }
     },
 
-    // 升级经验曲线：前期快、后期慢。目标是 30 分钟内能到 ~45 级
-    xpFor(lv) { return Math.round(3.5 + lv * 2.0 + Math.pow(lv, 1.22) * 0.9); },
+    // 升级经验曲线：前期快、后期明显放缓。
+    // 目标：30 分钟一整局约 80~120 级——既不会卡在十几级，
+    // 也不会让所有卡池在开局十分钟内就被搬空。
+    xpFor(lv) { return Math.round(4 + lv * 1.8 + Math.pow(lv, 1.5) * 0.55); },
 
     openChest(c) {
       const p = this.player;
@@ -1266,7 +1307,8 @@
       const p = this.player;
       this.sfx('pickup');
       if (it.kind === 'heal') {
-        const heal = Math.round(30 * ((this.mod && this.mod.healMul) || 1));
+        // 按最大生命百分比回复，后期高血量角色也能补得动
+        const heal = Math.round(Math.max(30, p.maxHp * 0.18) * ((this.mod && this.mod.healMul) || 1));
         p.hp = Math.min(p.maxHp, p.hp + heal);
         this.fx.text(p.x, p.y - 26, '+' + heal, '#7dffb0', 16);
       } else if (it.kind === 'magnet') {
@@ -1291,9 +1333,9 @@
       d = Math.max(1, Math.round(d * ((this.mod && this.mod.dmgTakenMul) || 1)));
       p.hp -= d;
       p.dmgTaken += d;
-      // 受击后 0.55s 无敌：足以穿出怪群，又不至于无脑站桩
-      p.iframe = 0.55;
-      p.invul = 0.55;
+      // 受击后 0.75s 无敌：足以从怪群中穿出去，又不至于无脑站桩
+      p.iframe = 0.75;
+      p.invul = 0.75;
       p.hitFlash = 0.24;
       this.runStats.hitTaken = true;
       this.fx.text(p.x, p.y - 24, d, '#ff8fa3', 16);
@@ -1673,19 +1715,20 @@
         if (p.dashT > 0) { c.shadowColor = '#7ee8fa'; c.shadowBlur = 30; }
         // 披风
         c.fillStyle = p.char.id === 'witch' ? '#5b2a8c' : p.char.id === 'necro' ? '#2a2a3f'
-          : p.char.id === 'blademaster' ? '#7c2d3a' : '#3a2c6b';
+          : p.char.id === 'blademaster' ? '#7c2d3a' : p.char.id === 'fatty' ? '#1d6ea8' : '#3a2c6b';
         c.beginPath();
         c.moveTo(-p.r * 0.95, -2);
         c.quadraticCurveTo(0, p.r * 2, p.r * 0.95, -2);
         c.closePath();
         c.fill();
-        // 身体
-        c.fillStyle = p.hitFlash > 0 ? '#ff9aa8' : '#e9e4ff';
+        // 身体（大肥鱼体型更圆润）
+        c.fillStyle = p.hitFlash > 0 ? '#ff9aa8' : p.char.id === 'fatty' ? '#bfe9ff' : '#e9e4ff';
         c.beginPath();
-        c.arc(0, 0, p.r, 0, TAU);
+        if (p.char.id === 'fatty') c.ellipse(0, 0, p.r * 1.12, p.r * 0.98, 0, 0, TAU);
+        else c.arc(0, 0, p.r, 0, TAU);
         c.fill();
         // 兜帽
-        c.fillStyle = '#2b2140';
+        c.fillStyle = p.char.id === 'fatty' ? '#17527d' : '#2b2140';
         c.beginPath();
         c.arc(0, -p.r * 0.35, p.r * 0.74, Math.PI, TAU);
         c.fill();
