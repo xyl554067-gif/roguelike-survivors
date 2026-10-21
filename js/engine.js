@@ -384,8 +384,7 @@
       s.area = ch.area; s.duration = 1; s.proj = ch.proj;
       s.magnet = ch.magnet; s.armor = ch.armor; s.regen = ch.regen * (m.healMul || 1);
       s.revive = m.noRevive ? 0 : ch.rev;
-      s.cooldown = 0; s.projspeed = 0; s.crit = 0.05; s.critdmg = 0.6;
-      s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
+      s.cooldown = 0; s.projspeed = 0; s.crit = 0.05; s.critdmg = 0.6;      s.greed = s.shopGreed * (m.goldMul || 1); s.xpGain = (ch.xp + s.shopXp) * (m.xpMul || 1);
       s.maxHpFlat = 0; s.pierce = 0; s.luck = (m.luckBonus || 0); s.thorns = 0;
       for (const id in p.passives) {
         const def = D.PASSIVES[id];
