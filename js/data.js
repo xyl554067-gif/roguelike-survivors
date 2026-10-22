@@ -38,6 +38,12 @@
     { id: 'fatty', name: '大肥鱼', ico: '🐋', hp: 150, spd: 0.88, might: 0.80, area: 1.18, proj: 0, magnet: 1.45, xp: 1.12, armor: 1, rev: 0, regen: 0.3,
       weapon: 'whalesong', tag: '深海', unlock: null,
       desc: '来自深海的鲸娘。<b>鲸歌</b>荡出水波推开并减速群敌；血量与拾取范围极高，代价是行动迟缓、单体偏弱。' },
+    { id: 'gale', name: '风驭 · 青岚', ico: '🍃', hp: 92, spd: 1.06, might: 0.96, area: 1.02, proj: 0, magnet: 1.12, xp: 1.00, armor: 0, rev: 0, regen: 0,
+      weapon: 'tornado', tag: '牵引', unlock: 'ach_dash_200', price: 1600,
+      desc: '驭风而行。<b>旋风</b>向前滚动，把沿途敌人扯进风眼反复割伤；移速快、身板一般。' },
+    { id: 'shade', name: '影舞 · 绯夜', ico: '🌑', hp: 88, spd: 1.08, might: 0.90, area: 1.04, proj: 0, magnet: 1.05, xp: 1.05, armor: 0, rev: 0, regen: 0,
+      weapon: 'mirror', tag: '镜像', unlock: 'ach_elite_50', price: 2400,
+      desc: '与影共舞。<b>影刃</b>唤出分身，持续复刻你全部武器的攻击；本体伤害略低，靠数量与机动取胜。' },
   ];
 
   /* ============================ 难度 ============================
@@ -569,6 +575,70 @@
       },
     },
 
+    /* ---------- 旋风 ---------- */
+    tornado: {
+      name: '旋风', ico: '🌪️', max: 8, kind: '召唤', color: '#a5b4fc',
+      desc: '召唤向前滚动的旋风，把沿途敌人扯向风眼持续割伤。',
+      next: ['风眼半径 +15%', '风伤 +3/s', '移动速度 +25%', '持续 +0.8s', '风伤 +3/s', '牵引 +40%', '双股旋风，半径 +15%'],
+      init: () => ({ t: 0, iv: 2.6, dmg: 10, radius: 74, life: 3.2, pull: 30, spd: 150, count: 1 }),
+      level: (s, lv) => {
+        if (lv === 2) s.radius *= 1.15; else if (lv === 3) s.dmg += 3;
+        else if (lv === 4) s.spd *= 1.25; else if (lv === 5) s.life += 0.8;
+        else if (lv === 6) s.dmg += 3; else if (lv === 7) s.pull *= 1.4;
+        else if (lv === 8) { s.count++; s.radius *= 1.15; }
+        s.iv *= 0.93;
+      },
+      fire(g, p, s) {
+        const n = s.count;
+        for (let i = 0; i < n; i++) {
+          const a = p.aimAng + (i - (n - 1) / 2) * 0.5;
+          g.spawnTornado(p.x, p.y, a, {
+            r: s.radius * p.stat.area, dps: s.dmg * p.stat.might,
+            life: s.life * p.stat.duration, pull: s.pull, spd: s.spd * p.stat.projspeed });
+        }
+        g.sfx('cast');
+      },
+    },
+
+    /* ---------- 影刃 ---------- */
+    mirror: {
+      name: '影刃', ico: '👤', max: 8, kind: '镜像', color: '#c4b5fd',
+      desc: '唤出贴身影分身复刻全部攻击，本体持续掷出影刺。',
+      next: ['持续 +1.5s', '冷却 -12%', '持续 +1.5s', '影刃伤害 +15%', '持续 +1.5s', '冷却 -12%', '持续 +2s，影刃伤害 +20%'],
+      init: () => ({ t: 0, iv: 14, dur: 4.5, dmgMul: 1, bt: 0, biv: 1.0, bdmg: 11 }),
+      level: (s, lv) => {
+        if (lv === 2) s.dur += 1.5; else if (lv === 3) s.iv *= 0.88;
+        else if (lv === 4) s.dur += 1.5; else if (lv === 5) s.dmgMul += 0.15;
+        else if (lv === 6) s.dur += 1.5; else if (lv === 7) s.iv *= 0.88;
+        else if (lv === 8) { s.dur += 2; s.dmgMul += 0.2; }
+      },
+      update(g, p, s, dt) {
+        // 慢周期：召唤分身（复刻你其余全部武器）
+        s.t += dt;
+        const iv = s.iv / (1 + p.stat.cooldown);
+        if (s.t >= iv) {
+          s.t = 0;
+          p.cloneT = Math.max(p.cloneT || 0, s.dur);
+          p.cloneDmgMul = s.dmgMul;
+          g.fx.ring(p.x, p.y, 46, 'rgba(196,181,253,0.5)');
+          g.sfx('cast');
+        }
+        // 快周期：影刺——保证开局自保，也是分身的复刻素材
+        s.bt += dt;
+        if (s.bt < s.biv) return;
+        s.bt = 0;
+        const t = g.nearestEnemy(p, 460);
+        if (!t) return;
+        const a = Math.atan2(t.y - p.y, t.x - p.x);
+        const n = p.cloneT > 0 ? Math.max(1, p.cloneCount | 0) : 1;
+        for (let i = 0; i < n; i++) {
+          const src = i === 0 ? p : g.cloneActor(p, i, n);
+          g.shoot(src, { ang: a + (i ? g.rand(-0.07, 0.07) : 0), spd: 520, dmg: s.bdmg * src.stat.might,
+            pierce: 1, life: 1.4, r: 7, src: 'mirror', kind: 'shadow', kb: 10, homing: 4 });
+        }
+      },
+    },
+
     /* ===================== 进化武器 ===================== */
     bloodwhip: {
       name: '血月鞭', ico: '🩸', max: 8, kind: '进化', color: '#ff5d7a', evolved: true,
@@ -758,6 +828,52 @@
         }
       },
     },
+    stormeye: {
+      name: '风眼', ico: '🌀', max: 8, kind: '进化', color: '#a5b4fc', evolved: true,
+      desc: '【进化】旋风 + 持久满级。两道巨型风眼长驻战场，把成群敌人拧成碎片。',
+      evolutionOf: 'tornado', next: [], init: () => ({ t: 0, iv: 2.2, dmg: 26, radius: 132, life: 5.5, pull: 60, spd: 120, count: 2 }),
+      level: () => {},
+      fire(g, p, s) {
+        for (let i = 0; i < s.count; i++) {
+          const a = p.aimAng + (i - (s.count - 1) / 2) * 0.6;
+          g.spawnTornado(p.x, p.y, a, {
+            r: s.radius * p.stat.area, dps: s.dmg * p.stat.might,
+            life: s.life * p.stat.duration, pull: s.pull, spd: s.spd * p.stat.projspeed });
+        }
+        g.sfx('cast');
+      },
+    },
+    shadowarmy: {
+      name: '千影', ico: '👥', max: 8, kind: '进化', color: '#c4b5fd', evolved: true,
+      desc: '【进化】影刃 + 急速满级。双影分身齐上，一人打出千军万马的攻势。',
+      evolutionOf: 'mirror', next: [], init: () => ({ t: 0, iv: 9, dur: 8, dmgMul: 1.35, bt: 0, biv: 0.55, bdmg: 30 }),
+      level: () => {},
+      update(g, p, s, dt) {
+        s.t += dt;
+        const iv = s.iv / (1 + p.stat.cooldown);
+        if (s.t >= iv) {
+          s.t = 0;
+          p.cloneT = Math.max(p.cloneT || 0, s.dur);
+          p.cloneDmgMul = s.dmgMul;
+          p.cloneCount = 2;
+          g.fx.ring(p.x, p.y, 70, 'rgba(196,181,253,0.6)');
+          g.sfx('cast');
+        }
+        // 双影刺：分身越多，刺越密
+        s.bt += dt;
+        if (s.bt < s.biv) return;
+        s.bt = 0;
+        const t = g.nearestEnemy(p, 560);
+        if (!t) return;
+        const a = Math.atan2(t.y - p.y, t.x - p.x);
+        const n = p.cloneT > 0 ? 2 : 1;
+        for (let i = 0; i < n; i++) {
+          const src = i === 0 ? p : g.cloneActor(p, i, n);
+          g.shoot(src, { ang: a + (i ? g.rand(-0.08, 0.08) : 0), spd: 560, dmg: s.bdmg * src.stat.might,
+            pierce: 2, life: 1.6, r: 9, src: 'shadowarmy', kind: 'shadow', kb: 14, homing: 4 });
+        }
+      },
+    },
   };
 
   /* 进化配方：武器满级 + 被动满级 */
@@ -772,6 +888,8 @@
     { from: 'boomerang', passive: 'duration', to: 'eternal' },
     { from: 'frost', passive: 'duration', to: 'absolutezero' },
     { from: 'bible', passive: 'area', to: 'apocalypse' },
+    { from: 'tornado', passive: 'duration', to: 'stormeye' },
+    { from: 'mirror', passive: 'cooldown', to: 'shadowarmy' },
   ];
 
   /* ============================ 被动 ============================ */
@@ -918,7 +1036,7 @@
       check: (s) => s.stats.dashes >= 200 },
     { id: 'ach_chars_5', name: '百般武艺', ico: '🎭', desc: '用 5 个不同角色完成一局', reward: 700,
       check: (s) => (s.stats.charsPlayed || []).length >= 5 },
-    { id: 'ach_all_weapons', name: '兵器谱', ico: '📜', desc: '使用过全部 16 种基础武器', reward: 900,
+    { id: 'ach_all_weapons', name: '兵器谱', ico: '📜', desc: '使用过全部 19 种基础武器', reward: 900,
       check: (s) => (s.stats.weaponsUsed || []).length >= 16 },
   ];
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* 校验线上 GitHub Pages 是否包含 v2.3.0 全部特性 */
+/* 校验线上 GitHub Pages 是否包含 v2.3.2 全部特性 */
 'use strict';
 const base = 'https://xyl554067-gif.github.io/roguelike-survivors/';
 
@@ -23,8 +23,8 @@ const base = 'https://xyl554067-gif.github.io/roguelike-survivors/';
   const main = await get('js/main.js');
 
   const checks = [
-    ['版本号 v2.3.0', html.includes('v2.3.0') && main.includes('v2.3.0')],
-    ['启动日志 v2.3.0', main.includes('v2.3.0')],
+    ['版本号 v2.3.2', html.includes('v2.3.2') && main.includes('v2.3.2')],
+    ['启动日志 v2.3.2', main.includes('v2.3.2')],
     ['模式选择下拉', html.includes('id="selMode"')],
     ['角色解锁面板', html.includes('id="unlockBox"')],
     ['局内商店面板', html.includes('id="runshop"') && html.includes('id="rsList"')],

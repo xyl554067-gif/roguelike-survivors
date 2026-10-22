@@ -1,7 +1,7 @@
 {
   "name": "roguelike-survivors",
-  "version": "2.3.0",
-  "description": "夜刃求生 · 纯前端 Canvas 肉鸽割草生存游戏，零依赖：10 角色 / 17 武器与进化 / 无尽模式 / 局内商店 / 虚拟摇杆 / 每日挑战 / 手柄支持",
+  "version": "2.3.2",
+  "description": "夜刃求生 · 纯前端 Canvas 肉鸽割草生存游戏，零依赖：12 角色 / 19 武器与进化 / 无尽模式 / 局内商店 / 虚拟摇杆 / 每日挑战 / 手柄支持",
   "private": true,
   "type": "commonjs",
   "scripts": {

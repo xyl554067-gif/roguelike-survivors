@@ -228,6 +228,123 @@ const ok = (name, cond, extra = '') => {
   await page.evaluate(() => window.DSUI.toMenu());
   await page.selectOption('#selMode', 'campaign');
 
+  /* ---------- 9. 横屏：三张升级卡同屏 + 图标瘦身 ---------- */
+  console.log('\n[9] 横屏升级卡与图标尺寸');
+  await page.click('#btnStart');
+  await page.waitForTimeout(900);
+  await page.evaluate(() => {
+    window.DSGame.player.pendingLevels = 1;   // 触发一次升级三选一
+  });
+  await page.waitForTimeout(700);
+  const cardsInfo = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#cards .card')];
+    const lvl = document.getElementById('levelup');
+    return {
+      count: cards.length,
+      visible: cards.filter((c) => {
+        const r = c.getBoundingClientRect();
+        return r.top >= -1 && r.bottom <= innerHeight + 1 && r.width > 0;
+      }).length,
+      rows: new Set(cards.map((c) => Math.round(c.getBoundingClientRect().top))).size,
+      overlayOpen: !lvl.classList.contains('hidden'),
+    };
+  });
+  ok('升级面板弹出且渲染 3 张卡', cardsInfo.overlayOpen && cardsInfo.count === 3, `共 ${cardsInfo.count} 张`);
+  ok('横屏下 3 张卡同屏完整可见', cardsInfo.visible === 3 && cardsInfo.rows === 1,
+     `可见 ${cardsInfo.visible} 张，占 ${cardsInfo.rows} 行`);
+  await page.screenshot({ path: OUT + '/m_levelup_landscape.png' });
+  await page.evaluate(() => window.DSUI.pickCard(0));   // 选一张继续
+  await page.waitForTimeout(400);
+
+  const sizes = await page.evaluate(() => {
+    const q = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return Math.round(r.width); };
+    return { dash: q('#btnTouchDash'), pause: q('#btnTouchPause'), joy: q('#joyBase'), fs: q('#btnFullscreen') };
+  });
+  ok('横屏下触控图标已瘦身（冲刺 ≤ 62px）', sizes.dash <= 62, `冲刺 ${sizes.dash}px / 暂停 ${sizes.pause}px / 摇杆 ${sizes.joy}px`);
+  ok('摇杆直径不超屏高 25%', sizes.joy <= 844 * 0 + 390 * 0.25, `摇杆 ${sizes.joy}px @ 390px 高`);
+
+  /* ---------- 10. 全屏按钮：iOS 回退路径 ---------- */
+  console.log('\n[10] 全屏按钮（iOS 回退）');
+  const fsRes = await page.evaluate(() => {
+    // 模拟 iOS Safari：遮蔽文档级全屏能力（方法在原型链上，必须用实例属性覆盖）
+    const el = document.documentElement;
+    const saved = { req: el.requestFullscreen, webkit: el.webkitRequestFullscreen, en: document.fullscreenEnabled };
+    el.requestFullscreen = undefined;
+    el.webkitRequestFullscreen = undefined;
+    Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+    let err = null;
+    const before = document.body.classList.contains('chrome-hidden');
+    try { window.DSUI.toggleFullscreen(); } catch (e) { err = e.message; }
+    const after = document.body.classList.contains('chrome-hidden');
+    const toast = document.getElementById('toast').textContent;
+    const cornerHidden = getComputedStyle(document.getElementById('btnMute')).opacity;
+    window.DSUI.toggleFullscreen();
+    const restored = !document.body.classList.contains('chrome-hidden');
+    // 还原浏览器能力，避免影响其他用例
+    el.requestFullscreen = saved.req; el.webkitRequestFullscreen = saved.webkit;
+    Object.defineProperty(document, 'fullscreenEnabled', { value: saved.en, configurable: true });
+    return { before, after, restored, toast, cornerHidden, err };
+  });
+  ok('iOS 回退：不支持全屏时进入 chrome-hidden 并给出提示',
+     !fsRes.err && fsRes.before === false && fsRes.after === true && /主屏幕|恢复/.test(fsRes.toast),
+     fsRes.err ? `异常: ${fsRes.err}` : `toast="${fsRes.toast.slice(0, 26)}…"`);
+  ok('回退模式下静音按钮隐藏、全屏按钮保留可退出', fsRes.cornerHidden === '0');
+  ok('再次点击可还原', fsRes.restored);
+
+  /* ---------- 11. 新角色与新武器实战 ---------- */
+  console.log('\n[11] 新角色与新武器');
+  await page.evaluate(() => window.DSUI.toMenu());
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const Save = window.DSSave;
+    Save.data.purchasedChars = { gale: 1, shade: 1 };
+    Save.save();
+    window.DSUI.buildSelectors();
+  });
+  await page.waitForTimeout(300);
+
+  // 青岚：把旋风内部计时推到临界，下一帧即召出旋风
+  await page.selectOption('#selChar', 'gale');
+  await page.click('#btnStart');
+  await page.waitForTimeout(600);
+  await page.evaluate(() => { window.DSGame.player.weapons[0].st.t = 2.55; });
+  await page.waitForTimeout(500);
+  const galeInfo = await page.evaluate(() => ({
+    tornados: window.DSGame.tornados.length,
+    weapon: window.DSGame.player.weapons[0].id,
+  }));
+  ok('青岚·旋风：场上出现旋风实体', galeInfo.tornados > 0 && galeInfo.weapon === 'tornado',
+     `旋风 ${galeInfo.tornados} 道`);
+  await page.screenshot({ path: OUT + '/m_new_tornado.png' });
+
+  // 绯夜：推到分身临界 + 手动放一只敌触发影刺
+  await page.evaluate(() => { window.DSGame.endRun(false); });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => window.DSUI.toMenu());
+  await page.waitForTimeout(400);
+  await page.selectOption('#selChar', 'shade');
+  await page.click('#btnStart');
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    const g = window.DSGame;
+    g.player.weapons[0].st.t = 13.9;                       // 逼近 14s 分身周期
+    g.spawnEnemy('slime', { x: g.player.x + 120, y: g.player.y }, 1, true);
+  });
+  await page.waitForTimeout(900);
+  const shadeInfo = await page.evaluate(() => {
+    const g = window.DSGame;
+    return { cloneT: g.player.cloneT, weapon: g.player.weapons[0].id,
+             shadowProj: g.projectiles.filter((q) => q.kind === 'shadow').length };
+  });
+  ok('绯夜·影刃：分身激活', shadeInfo.cloneT > 0 && shadeInfo.weapon === 'mirror',
+     `cloneT=${shadeInfo.cloneT.toFixed(1)}s`);
+  ok('绯夜·影刃：影刺已射出', shadeInfo.shadowProj > 0, `影刺 ${shadeInfo.shadowProj} 发`);
+  await page.screenshot({ path: OUT + '/m_new_mirror.png' });
+  // 还原干净存档
+  await page.evaluate(() => {
+    window.DSSave.data.purchasedChars = {}; window.DSSave.save();
+  });
+
   await browser.close();
 
   const fail = results.filter((r) => !r.pass);

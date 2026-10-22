@@ -306,13 +306,31 @@
 
     toggleFullscreen() {
       const el = document.documentElement;
-      try {
-        if (!document.fullscreenElement) {
-          (el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el);
-        } else {
-          (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
-        }
-      } catch (e) { this.toast('当前浏览器不支持全屏'); }
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl) {
+        (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document);
+        return;
+      }
+      const canFs = !!(document.fullscreenEnabled || el.webkitRequestFullscreen);
+      if (canFs) {
+        try {
+          const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+          if (r && r.catch) r.catch(() => this.fallbackChromeMode());
+          return;
+        } catch (e) { /* 落到回退方案 */ }
+      }
+      this.fallbackChromeMode();
+    },
+
+    /** iOS 等不支持文档级全屏：退而隐藏界面装饰按钮，把画面让给玩家；
+        再点一次全屏按钮（半透明保留）即可恢复 */
+    fallbackChromeMode() {
+      const on = document.body.classList.toggle('chrome-hidden');
+      this.toast(on
+        ? '已隐藏界面按钮；iOS 可通过 Safari 分享菜单「添加到主屏幕」获得全屏体验'
+        : '已恢复界面按钮');
+      const fs = document.getElementById('btnFullscreen');
+      if (fs) fs.title = on ? '恢复界面按钮' : '全屏 (F)';
     },
 
     /** 竖屏且是小屏设备时提示横屏；用户手动关闭后不再打扰 */

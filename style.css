@@ -157,6 +157,7 @@ b.win { color: var(--accent); }
   width: min(1000px, 95vw); max-height: 94vh;
   padding: 22px 26px 18px; text-align: center;
   display: flex; flex-direction: column;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;   /* 内容超高时可滚动，绝不裁切 */
 }
 .overlay-inner.wide { width: min(1080px, 96vw); }
 .overlay-inner.narrow { width: min(600px, 94vw); }
@@ -740,3 +741,49 @@ body.big-text .slot { width: 38px; height: 38px; font-size: 19px; }
   .hud-stats { gap: 6px; }
   .next-event { top: 74px; }
 }
+
+/* 触屏设备（无论横竖屏）：控件比鼠标操作更吃面积，统一瘦一档 */
+@media (pointer: coarse) {
+  .joy-base { width: 100px; height: 100px; }
+  .joy-knob { width: 48px; height: 48px; }
+  .tb-dash { width: 74px; height: 74px; font-size: 25px; }
+  .tb-pause { width: 50px; height: 50px; font-size: 16px; }
+  .corner-btn { width: 38px; height: 38px; }
+}
+
+/* ============================ 横屏矮屏（手机横放） ============================
+   高度通常只有 390~430px：升级卡必须三张同屏、触控图标必须缩小，
+   否则第三张卡被裁切、摇杆与按钮占据小半屏。
+   注意：本块须置于 pointer:coarse 之后，横屏瘦身才能覆盖默认触屏尺寸。 */
+@media (orientation: landscape) and (max-height: 560px) {
+  .overlay-inner { max-height: 96vh; padding: 12px 14px 10px; }
+  .levelup-head { margin-bottom: 6px; }
+  .levelup-head h2 { font-size: 16px; }
+  .head-btns .btn { font-size: 10.5px; padding: 4px 8px; }
+  .cards { gap: 8px; }
+  .card { width: 31%; min-height: 148px; padding: 9px 10px; border-radius: 12px; }
+  .card .ico { font-size: 20px; }
+  .card .nm { font-size: 13px; margin: 4px 0 1px; }
+  .card .ty { font-size: 9px; }
+  .card .ds { font-size: 10px; line-height: 1.45; margin-top: 5px; }
+  .card .lvbar { margin-top: 6px; gap: 3px; }
+  .levelup .tip { display: none; }          /* 竖屏空间宝贵，隐藏提示行 */
+  /* 触控图标整体缩小，把画面还给玩家 */
+  .joy-base { width: 84px; height: 84px; border-width: 2px; }
+  .joy-knob { width: 40px; height: 40px; }
+  .joy-zone { height: 38vh; max-height: 180px; }
+  .tb-dash { width: 60px; height: 60px; font-size: 21px; }
+  .tb-pause { width: 42px; height: 42px; font-size: 14px; }
+  .touch-btns { right: 10px; bottom: 58px; gap: 9px; }   /* 抬高于右下角静音/全屏行，避免重叠 */
+  .corner-btn { width: 32px; height: 32px; font-size: 13px; }
+  .hud-stats .stat b { font-size: 13px; }
+  .hud-stats .stat i { font-size: 8.5px; }
+  .rh-title { font-size: 17px; }
+  .rh-desc { font-size: 11.5px; margin-bottom: 12px; }
+  .rh-ico { font-size: 42px; }
+}
+
+/* 隐藏界面装饰（iOS 不支持文档级全屏时的回退模式，由 JS 切换 body.chrome-hidden） */
+body.chrome-hidden .corner-btn { opacity: 0; pointer-events: none; }
+body.chrome-hidden #btnFullscreen { opacity: .55; }
+body.chrome-hidden .keys-line { display: none; }

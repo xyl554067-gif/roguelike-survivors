@@ -311,6 +311,7 @@
       this.enemies = []; this.projectiles = []; this.zones = []; this.gems = []; this.chests = [];
       this.items = []; this.particles = []; this.texts = []; this.arcs = []; this.novas = [];
       this.zaps = []; this.markers = []; this.orbits = []; this.delayed = []; this.summons = [];
+      this.tornados = [];
       this.cam = { x: 0, y: 0, sx: 0, sy: 0, shake: 0, shakeT: 0 };
       this.nextMini = 120; this.nextElite = 420; this.nextMimic = 300;
       this.waveDone = {}; this.finalSpawned = false; this.won = false;
@@ -405,6 +406,7 @@
         level: 1, xp: 0, xpNeed: 5, gold: 0, totalGold: 0, kills: 0, dmgDealt: 0, dmgTaken: 0,
         weaponKills: {}, weapons: [], passives: {}, stat, dashCd: 0, dashT: 0,
         dashDirX: 0, dashDirY: 0, pendingLevels: 0,
+        cloneT: 0, cloneCount: 1, cloneDmgMul: 1,   // 影刃分身
       };
     },
 
@@ -521,6 +523,7 @@
       this.updateEnemies(dt);
       this.updateProjectiles(dt);
       this.updateZones(dt);
+      this.updateTornados(dt);
       this.updateDelayed(dt);
       this.updateGems(dt);
       this.updateEffects(dt);
@@ -677,8 +680,17 @@
         if (def.update) { def.update(this, p, w.st, dt); continue; }
         w.st.t += dt;
         const iv = w.st.iv / (1 + s.cooldown);
-        if (w.st.t >= iv) { w.st.t = 0; def.fire(this, p, w.st); }
+        if (w.st.t >= iv) {
+          w.st.t = 0;
+          def.fire(this, p, w.st);
+          // 影刃：分身以相同节奏复刻本次开火（光环/环绕类不参与，避免双倍持续伤害）
+          if (p.cloneT > 0) {
+            const n = Math.max(1, p.cloneCount | 0);
+            for (let i = 0; i < n; i++) def.fire(this, this.cloneActor(p, i, n), w.st);
+          }
+        }
       }
+      if (p.cloneT > 0) p.cloneT = Math.max(0, p.cloneT - dt);
     },
 
     /* ---------- 生成 ---------- */
@@ -1038,6 +1050,92 @@
       }
       arr.sort((a, b) => a.d - b.d);
       return arr.slice(0, Math.max(0, n)).map((o) => o.e);
+    },
+
+    /* ---------- 影刃分身 ---------- */
+    /** 生成一个「贴身影分身」视图：共享属性（伤害按 cloneDmgMul 缩放），位置在本体身后展开 */
+    cloneActor(p, i, n) {
+      const back = Math.atan2(p.vy || 0, p.vx || 0) || p.aimAng;
+      const a = back + Math.PI + (n === 1 ? 0 : (i - (n - 1) / 2) * 0.9);
+      const c = Object.create(p);
+      c.x = p.x + Math.cos(a) * 46;
+      c.y = p.y + Math.sin(a) * 46;
+      c.stat = Object.assign({}, p.stat, { might: p.stat.might * (p.cloneDmgMul || 1) });
+      return c;
+    },
+
+    /* ---------- 旋风 ---------- */
+    spawnTornado(x, y, ang, cfg) {
+      if (this.tornados.length > 14) return;
+      const life = cfg.life || 3;
+      this.tornados.push({
+        x, y,
+        vx: Math.cos(ang) * (cfg.spd || 150), vy: Math.sin(ang) * (cfg.spd || 150),
+        r: cfg.r || 70, dps: cfg.dps || 10, pull: cfg.pull || 30,
+        life, max: life, t: 0, tick: 0, ang: this.rand(0, TAU),
+      });
+    },
+
+    updateTornados(dt) {
+      const p = this.player;
+      for (let i = this.tornados.length - 1; i >= 0; i--) {
+        const tn = this.tornados[i];
+        tn.t += dt; tn.life -= dt; tn.ang += dt * 10;
+        tn.x += tn.vx * dt; tn.y += tn.vy * dt;
+        const damp = Math.pow(0.02, dt);
+        tn.vx *= damp; tn.vy *= damp;
+        // 牵引：把范围内敌人拖向风眼（首领效果减弱）
+        const rr = (tn.r + 20) * (tn.r + 20);
+        for (const e of this.enemies) {
+          if (e.dead) continue;
+          const dx = tn.x - e.x, dy = tn.y - e.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > rr || d2 <= 1) continue;
+          const d = Math.sqrt(d2);
+          const k = (e.boss ? 0.1 : 1) * tn.pull;
+          e.kx += (dx / d) * k * dt * 8;
+          e.ky += (dy / d) * k * dt * 8;
+        }
+        tn.tick += dt;
+        if (tn.tick >= 0.2) {
+          tn.tick = 0;
+          let hit = 0;
+          for (const e of this.enemies) {
+            if (e.dead) continue;
+            if (this.dist2(e.x, e.y, tn.x, tn.y) > (tn.r + e.r) ** 2) continue;
+            this.damageEnemy(p, e, tn.dps * 0.2, { src: 'tornado', quiet: true, kb: 8 });
+            hit++;
+          }
+          if (hit) {
+            this.fx.burst(tn.x, tn.y, 'rgba(165,180,252,0.55)', 2, 1.1);
+            if (this.random() < 0.4) this.sfx('aura');
+          }
+        }
+        if (tn.life <= 0) this.tornados.splice(i, 1);
+      }
+    },
+
+    drawTornados(c) {
+      for (const tn of this.tornados) {
+        const k = Math.min(1, (tn.life / tn.max) * 1.8);
+        c.save();
+        c.translate(tn.x, tn.y);
+        c.globalAlpha = 0.85 * k;
+        for (let i = 0; i < 3; i++) {
+          const rr = tn.r * (0.42 + i * 0.3);
+          c.strokeStyle = i % 2 ? 'rgba(199,210,254,0.9)' : 'rgba(129,140,248,0.75)';
+          c.lineWidth = 5 - i * 1.2;
+          c.beginPath();
+          c.ellipse(0, 0, rr, rr * 0.4, tn.ang + i * 2.1, 0, TAU);
+          c.stroke();
+        }
+        c.globalAlpha = 0.5 * k;
+        c.fillStyle = 'rgba(224,231,255,0.5)';
+        c.beginPath();
+        c.ellipse(0, 0, tn.r * 0.22, tn.r * 0.1, tn.ang * 1.4, 0, TAU);
+        c.fill();
+        c.restore();
+      }
     },
 
     damageEnemy(p, e, dmg, opt) {
@@ -1698,6 +1796,7 @@
       if (this.state !== 'menu' && this.player) this.drawPlayer(c);
       this.drawEnemies(c);
       this.drawSummons(c);
+      this.drawTornados(c);
       this.drawProjectiles(c);
       this.drawBeams(c);
       this.drawSpikes(c);
@@ -1892,6 +1991,23 @@
         c.moveTo(Math.cos(p.aimAng) * (p.r + 5), Math.sin(p.aimAng) * (p.r + 5));
         c.lineTo(Math.cos(p.aimAng) * (p.r + 18), Math.sin(p.aimAng) * (p.r + 18));
         c.stroke();
+      }
+      // 影刃分身：半透明紫影，呼吸闪烁
+      if (p.cloneT > 0) {
+        const n = Math.max(1, p.cloneCount | 0);
+        const back = Math.atan2(p.vy || 0, p.vx || 0) || p.aimAng;
+        for (let i = 0; i < n; i++) {
+          const a = back + Math.PI + (n === 1 ? 0 : (i - (n - 1) / 2) * 0.9);
+          const cxx = Math.cos(a) * 46, cyy = Math.sin(a) * 46;
+          c.save();
+          c.globalAlpha = 0.4 + 0.14 * Math.sin(this.t * 9 + i * 2);
+          c.translate(cxx, cyy);
+          c.fillStyle = '#c4b5fd';
+          c.beginPath(); c.arc(0, 0, p.r * 0.92, 0, TAU); c.fill();
+          c.fillStyle = '#2b2140';
+          c.beginPath(); c.arc(0, -p.r * 0.32, p.r * 0.68, Math.PI, TAU); c.fill();
+          c.restore();
+        }
       }
       c.restore();
     },
@@ -2163,6 +2279,15 @@
             c.shadowColor = '#9ec1ff';
             c.beginPath();
             c.moveTo(10, 0); c.lineTo(-6, -3.5); c.lineTo(-6, 3.5);
+            c.closePath();
+            c.fill();
+            break;
+          case 'shadow':
+            c.fillStyle = '#c4b5fd';
+            c.shadowColor = '#8b5cf6';
+            c.shadowBlur = 14;
+            c.beginPath();
+            c.moveTo(10, 0); c.lineTo(-6, -4); c.lineTo(-2, 0); c.lineTo(-6, 4);
             c.closePath();
             c.fill();
             break;
